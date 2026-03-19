@@ -5,6 +5,7 @@ export const TERMINAL_VEL = 1200;
  * Integrate velocity and position, apply gravity.
  */
 export function integrate(entity, dt) {
+  entity.prevY = entity.y;
   if (!entity.onGround) {
     entity.vy += GRAVITY * dt;
     if (entity.vy > TERMINAL_VEL) entity.vy = TERMINAL_VEL;
@@ -21,23 +22,34 @@ export function resolveAABB(entity, tile) {
   const ex = entity.x, ey = entity.y, ew = entity.w, eh = entity.h;
   const tx = tile.x,  ty = tile.y,  tw = tile.w,  th = tile.h;
 
-  // Overlap test
-  const overlapX = (ex + ew) - tx < tw + (ex - (tx + tw)) ? (ex + ew) - tx : tx + tw - ex;
-  const overlapY = (ey + eh) - ty < th + (ey - (ty + th)) ? (ey + eh) - ty : ty + th - ey;
+  // Penetration depth from each side
+  const fromLeft   = (ex + ew) - tx;   // entity right → tile left
+  const fromRight  = (tx + tw) - ex;   // tile right → entity left
+  const fromTop    = (ey + eh) - ty;   // entity bottom → tile top
+  const fromBottom = (ty + th) - ey;   // tile bottom → entity top
 
-  if (overlapX <= 0 || overlapY <= 0) return;
+  // No overlap on either axis → nothing to do
+  if (fromLeft <= 0 || fromRight <= 0 || fromTop <= 0 || fromBottom <= 0) return;
 
-  // Minimum penetration axis
-  if (Math.abs(overlapX) < Math.abs(overlapY)) {
-    entity.x += overlapX * (entity.x < tile.x ? -1 : 1);
+  const minX = Math.min(fromLeft, fromRight);
+  const minY = Math.min(fromTop, fromBottom);
+
+  if (minX < minY) {
+    // Resolve horizontally
+    if (fromLeft < fromRight) {
+      entity.x -= fromLeft;   // push entity left
+    } else {
+      entity.x += fromRight;  // push entity right
+    }
     entity.vx = 0;
   } else {
-    if (entity.vy > 0 && entity.y + entity.h - entity.vy * (1 / 60) <= tile.y + 1) {
-      entity.y = tile.y - entity.h;
+    // Resolve vertically
+    if (fromTop < fromBottom) {
+      entity.y -= fromTop;    // land on top surface
       entity.vy = 0;
       entity.onGround = true;
-    } else if (entity.vy < 0) {
-      entity.y = tile.y + tile.h;
+    } else {
+      entity.y += fromBottom; // hit underside of tile
       entity.vy = 0;
     }
   }
@@ -45,14 +57,15 @@ export function resolveAABB(entity, tile) {
 
 /**
  * One-way platform: only collide when falling onto the top surface.
+ * Uses entity.prevY stored before integration.
  */
 export function resolveOneWay(entity, tile) {
-  const prevBottom = entity.y + entity.h - entity.vy * (1 / 60);
+  const prevBottom = (entity.prevY ?? entity.y) + entity.h;
   const currBottom = entity.y + entity.h;
 
   if (
     entity.vy >= 0 &&
-    prevBottom <= tile.y + 2 &&
+    prevBottom <= tile.y + 1 &&
     currBottom >= tile.y &&
     entity.x + entity.w > tile.x + 4 &&
     entity.x < tile.x + tile.w - 4
