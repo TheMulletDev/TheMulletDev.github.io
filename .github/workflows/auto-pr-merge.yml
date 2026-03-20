@@ -22,19 +22,20 @@ jobs:
           REPO="${{ github.repository }}"
 
           # Check if a PR already exists for this branch
-          EXISTING=$(gh pr list --repo "$REPO" --head "$BRANCH" --json number -q '.[0].number')
+          EXISTING=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open | awk '{print $1}' | head -1)
 
           if [ -n "$EXISTING" ]; then
             echo "PR #$EXISTING already exists for $BRANCH"
             echo "pr_number=$EXISTING" >> "$GITHUB_OUTPUT"
           else
-            PR_NUMBER=$(gh pr create \
+            # gh pr create prints the PR URL to stdout; extract the number from it
+            PR_URL=$(gh pr create \
               --repo "$REPO" \
               --head "$BRANCH" \
               --base main \
               --title "Auto PR: $BRANCH" \
-              --body "Automated PR from branch \`$BRANCH\`." \
-              --json number -q '.number')
+              --body "Automated PR from branch \`$BRANCH\`.")
+            PR_NUMBER="${PR_URL##*/}"
             echo "Created PR #$PR_NUMBER for $BRANCH"
             echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
           fi
