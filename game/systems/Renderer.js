@@ -222,6 +222,16 @@ export class Renderer {
 
   // ── Changelog helpers (used for both drawing and hit-testing) ──────────────
 
+  /** Total pixel height of all changelog entries (for scroll capping). */
+  changelogContentHeight(changelog) {
+    const LINE_H = 19, VER_H = 34;
+    let h = 18; // top pad
+    for (const s of changelog) {
+      h += VER_H + 6 + s.changes.length * LINE_H + 14;
+    }
+    return h;
+  }
+
   changelogButtonRect(canvasW, canvasH) {
     const w = 112, h = 28, pad = 14;
     return { x: canvasW - w - pad, y: pad, w, h };
@@ -360,13 +370,24 @@ export class Renderer {
 
     ctx.restore(); // remove clip
 
-    // Scroll hint if content overflows
-    const contentH = cursor - (bodyY + pad - scrollY) + scrollY;
-    if (contentH > bodyH + 10) {
-      ctx.fillStyle = 'rgba(200,154,48,0.6)';
-      ctx.font      = '10px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('▼ scroll for more', px + pw / 2, py + ph - 8);
+    // Scrollbar
+    const totalH = this.changelogContentHeight(changelog);
+    if (totalH > bodyH) {
+      const trackX = px + pw - 8;
+      const trackW = 4;
+      // Track
+      ctx.fillStyle = '#222244';
+      ctx.beginPath();
+      ctx.roundRect(trackX, bodyY, trackW, bodyH, 2);
+      ctx.fill();
+      // Thumb
+      const thumbH   = Math.max(24, bodyH * (bodyH / totalH));
+      const maxScroll = totalH - bodyH;
+      const thumbY   = bodyY + (scrollY / maxScroll) * (bodyH - thumbH);
+      ctx.fillStyle = scrollY < maxScroll - 2 ? '#c89a30' : '#888';
+      ctx.beginPath();
+      ctx.roundRect(trackX, thumbY, trackW, thumbH, 2);
+      ctx.fill();
     }
 
     ctx.restore();
