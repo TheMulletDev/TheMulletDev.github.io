@@ -259,6 +259,26 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
+  drawDecorations(ctx, decorations) {
+    const t = Date.now() / 1000;
+    for (const d of decorations) {
+      ctx.save();
+      ctx.translate(d.x, d.y);
+      switch (d.type) {
+        case 'haybale':   _decHaybale(ctx);                  break;
+        case 'barrel':    _decBarrel(ctx);                   break;
+        case 'signpost':  _decSignpost(ctx);                 break;
+        case 'flowers':   _decFlowers(ctx, t, d.seed ?? 0); break;
+        case 'stump':     _decStump(ctx);                    break;
+        case 'fence':     _decFence(ctx);                    break;
+        case 'toadstool': _decToadstool(ctx);                break;
+        case 'crate':     _decCrate(ctx);                    break;
+        case 'lantern':   _decLantern(ctx, t);               break;
+      }
+      ctx.restore();
+    }
+  }
+
   drawDrops(ctx, drops) {
     for (const d of drops) {
       const bob = Math.sin(d.bobTimer) * 3;
@@ -756,6 +776,308 @@ function _henesysTrees(ctx, ox, baseY, treeH, tileW, count) {
       ctx.fill();
     }
   }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//   WORLD DECORATIONS  (Henesys-style props, drawn in world space)
+//   Each function draws relative to (0, 0) — caller does ctx.translate(d.x,d.y)
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Hay bale — ~40 × 28 px
+function _decHaybale(ctx) {
+  // Drop shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(20, 27, 18, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Body
+  ctx.fillStyle = '#c8901a';
+  ctx.beginPath();
+  ctx.ellipse(19, 14, 19, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Straw texture rings
+  ctx.strokeStyle = '#a07010';
+  ctx.lineWidth = 1.5;
+  for (const oy of [-7, 0, 7]) {
+    ctx.beginPath();
+    ctx.ellipse(19, 14 + oy, 18, 2.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // Top highlight
+  ctx.fillStyle = '#e8b830';
+  ctx.beginPath();
+  ctx.ellipse(14, 9, 10, 6, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  // Rope band
+  ctx.strokeStyle = '#7a5c10';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(19, 14, 19, 13, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+// Wooden barrel — ~24 × 30 px
+function _decBarrel(ctx) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(12, 31, 10, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Body
+  ctx.fillStyle = '#7a4a28';
+  ctx.beginPath();
+  ctx.roundRect(2, 2, 20, 28, [3, 3, 5, 5]);
+  ctx.fill();
+  // Wood stave highlights
+  ctx.fillStyle = '#9a6038';
+  ctx.fillRect(5, 4, 3, 24);
+  ctx.fillRect(14, 4, 3, 24);
+  // Metal bands
+  ctx.fillStyle = '#3a2c18';
+  ctx.fillRect(2, 5,  20, 3);
+  ctx.fillRect(2, 13, 20, 3);
+  ctx.fillRect(2, 21, 20, 3);
+  // Top face
+  ctx.fillStyle = '#6a3c20';
+  ctx.beginPath();
+  ctx.ellipse(12, 3, 10, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Band sheen
+  ctx.fillStyle = '#5a4828';
+  ctx.fillRect(3, 5,  3, 1.5);
+  ctx.fillRect(3, 13, 3, 1.5);
+  ctx.fillRect(3, 21, 3, 1.5);
+}
+
+// Wooden signpost — ~40 × 56 px (sign at top, post below)
+function _decSignpost(ctx) {
+  // Sign board
+  ctx.fillStyle = '#b8842a';
+  ctx.fillRect(0, 0, 40, 22);
+  ctx.fillStyle = '#d4a040';
+  ctx.fillRect(1, 1, 38, 20);
+  ctx.fillStyle = '#e8be58';
+  ctx.fillRect(2, 2, 36, 8);
+  // Sign text
+  ctx.fillStyle = '#3a2008';
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('▲  UP!', 20, 11);
+  ctx.textBaseline = 'alphabetic';
+  // Border
+  ctx.strokeStyle = '#7a5018';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(0.75, 0.75, 38.5, 20.5);
+  // Post
+  ctx.fillStyle = '#8b6218';
+  ctx.fillRect(17, 18, 7, 38);
+  ctx.fillStyle = '#c89a30';
+  ctx.fillRect(18, 18, 4, 38);
+  // Post detail band
+  ctx.fillStyle = '#7a5010';
+  ctx.fillRect(16, 30, 9, 3);
+}
+
+// Flower cluster — ~42 × 20 px, seed varies petal colours
+function _decFlowers(ctx, t, seed) {
+  const COLORS = ['#ff80b0', '#ffe040', '#ffffff', '#ff60d0', '#ffa0f0', '#80e8ff'];
+  const stems  = [{ bx: 5, by: 5 }, { bx: 15, by: 3 }, { bx: 26, by: 6 }, { bx: 36, by: 4 }];
+  for (let i = 0; i < stems.length; i++) {
+    const { bx, by } = stems[i];
+    const sway = Math.sin(t * 1.4 + i * 1.7 + seed) * 1.5;
+    const col  = COLORS[(seed * 3 + i * 2) % COLORS.length];
+    // Stem
+    ctx.strokeStyle = '#3a8a18';
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bx, 20);
+    ctx.lineTo(bx + sway, by + 6);
+    ctx.stroke();
+    // Leaf
+    ctx.fillStyle = '#50a828';
+    ctx.beginPath();
+    ctx.ellipse(bx + sway + 3, by + 10, 4, 2, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    // Petals
+    ctx.fillStyle = col;
+    for (let k = 0; k < 5; k++) {
+      const ang = (k / 5) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.ellipse(bx + sway + Math.cos(ang) * 4, by + 3 + Math.sin(ang) * 4, 3, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Centre
+    ctx.fillStyle = '#ffee50';
+    ctx.beginPath();
+    ctx.arc(bx + sway, by + 3, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Tree stump — ~32 × 22 px
+function _decStump(ctx) {
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(16, 23, 14, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Body
+  ctx.fillStyle = '#7a5828';
+  ctx.fillRect(3, 11, 26, 11);
+  // Bark texture
+  ctx.fillStyle = '#5a3e18';
+  ctx.fillRect(3,  13, 2, 7);
+  ctx.fillRect(10, 13, 2, 7);
+  ctx.fillRect(18, 13, 2, 7);
+  ctx.fillRect(25, 13, 2, 7);
+  // Top face
+  ctx.fillStyle = '#b07838';
+  ctx.beginPath();
+  ctx.ellipse(16, 11, 13, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Growth rings
+  ctx.strokeStyle = '#8a5c28';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(16, 11, 9, 3.5, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(16, 11, 5, 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#7a5020';
+  ctx.beginPath();
+  ctx.arc(16, 11, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  // Grass sprouts
+  ctx.strokeStyle = '#50aa28';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(13, 7); ctx.lineTo(11, 3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(16, 6); ctx.lineTo(16, 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(19, 7); ctx.lineTo(21, 3); ctx.stroke();
+}
+
+// Wooden fence — ~72 × 24 px (3 posts + 2 horizontal rails)
+function _decFence(ctx) {
+  for (const px of [0, 33, 66]) {
+    ctx.fillStyle = '#a8822e';
+    ctx.fillRect(px, 0, 6, 24);
+    ctx.fillStyle = '#d4aa48';
+    ctx.fillRect(px + 1, 0, 3, 22);
+    ctx.fillStyle = '#c09838';
+    ctx.fillRect(px, 0, 6, 3); // cap
+  }
+  // Rails
+  ctx.fillStyle = '#b89038';
+  ctx.fillRect(3, 5,  66, 4);
+  ctx.fillRect(3, 15, 66, 4);
+  // Rail highlights
+  ctx.fillStyle = '#d8b050';
+  ctx.fillRect(3, 5,  66, 1.5);
+  ctx.fillRect(3, 15, 66, 1.5);
+}
+
+// Decorative toadstool — ~22 × 20 px (no eyes, not an enemy)
+function _decToadstool(ctx) {
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(11, 21, 9, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Stem
+  ctx.fillStyle = '#f0ead8';
+  ctx.fillRect(7, 11, 8, 9);
+  ctx.fillStyle = '#d8ceb8';
+  ctx.fillRect(8, 11, 4, 8);
+  // Cap shadow
+  ctx.fillStyle = '#8a1c0e';
+  ctx.beginPath();
+  ctx.ellipse(12, 12, 12, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Cap main
+  ctx.fillStyle = '#d82e18';
+  ctx.beginPath();
+  ctx.ellipse(11, 11, 12, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Highlight
+  ctx.fillStyle = '#f04828';
+  ctx.beginPath();
+  ctx.ellipse(7, 8, 6, 4, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+  // White spots
+  ctx.fillStyle = '#fffff2';
+  ctx.beginPath(); ctx.arc(6,  9, 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(15, 11, 2,   0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(11,  6, 1.5, 0, Math.PI * 2); ctx.fill();
+  // Cap brim
+  ctx.fillStyle = '#e8cec0';
+  ctx.fillRect(1, 17, 20, 2.5);
+}
+
+// Wooden crate — 28 × 28 px
+function _decCrate(ctx) {
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(2, 27, 26, 3);
+  // Body
+  ctx.fillStyle = '#9a7038';
+  ctx.fillRect(0, 0, 28, 28);
+  // Plank frames
+  ctx.fillStyle = '#b88c50';
+  ctx.fillRect(0,   0, 28,  6);
+  ctx.fillRect(0,  22, 28,  6);
+  ctx.fillRect(0,   0,  6, 28);
+  ctx.fillRect(22,  0,  6, 28);
+  // X brace
+  ctx.strokeStyle = '#7a5828';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(6, 6); ctx.lineTo(22, 22); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(22, 6); ctx.lineTo(6, 22); ctx.stroke();
+  // Border
+  ctx.strokeStyle = '#6a4820';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, 26, 26);
+  // Corner nails
+  ctx.fillStyle = '#4a3010';
+  for (const [nx, ny] of [[2, 2], [22, 2], [2, 22], [22, 22]]) {
+    ctx.fillRect(nx, ny, 3, 3);
+  }
+}
+
+// Glowing lantern on post — ~16 × 40 px
+function _decLantern(ctx, t) {
+  const flicker = 0.85 + 0.15 * Math.sin(t * 7.3 + 2.1);
+  // Pole
+  ctx.fillStyle = '#404040';
+  ctx.fillRect(6, 12, 4, 28);
+  ctx.fillStyle = '#686868';
+  ctx.fillRect(7, 12, 2, 28);
+  // Frame
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(1,  0, 14,  4);   // top cap
+  ctx.fillRect(1, 22, 14,  4);   // bottom cap
+  ctx.fillRect(1,  4,  3, 18);   // left frame
+  ctx.fillRect(12, 4,  3, 18);   // right frame
+  ctx.fillRect(7,  4,  2, 18);   // centre mullion
+  // Hook ring
+  ctx.strokeStyle = '#484848';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(8, 1, 3, Math.PI, 0);
+  ctx.stroke();
+  // Amber glass + glow
+  ctx.save();
+  ctx.shadowColor = '#ff9820';
+  ctx.shadowBlur  = 14 * flicker;
+  ctx.globalAlpha = 0.75 * flicker;
+  ctx.fillStyle   = '#ffaa30';
+  ctx.fillRect(4, 5, 3, 16);
+  ctx.fillRect(9, 5, 3, 16);
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur  = 0;
+  // Warm glow pool on ground below
+  ctx.globalAlpha = 0.15 * flicker;
+  ctx.fillStyle   = '#ffbb40';
+  ctx.beginPath();
+  ctx.ellipse(8, 44, 22, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
