@@ -153,9 +153,9 @@ export class Renderer {
 
   drawPortal(ctx, px, py, pw, ph, color) {
     const cx  = px + pw / 2;
-    const cy  = py + ph * 0.72;  // oval center — lower inside the zone
+    const ry  = ph * 0.46;        // half-height of oval
+    const cy  = py + ph - ry;     // bottom of oval sits exactly at platform surface
     const rx  = pw * 0.40;
-    const ry  = ph * 0.52;
     const t   = Date.now() / 1000;
     const pulse = 0.72 + 0.28 * Math.sin(t * 2.4);
 
