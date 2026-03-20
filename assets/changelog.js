@@ -6,6 +6,18 @@
  */
 export const CHANGELOG = [
   {
+    version: '0.6',
+    date: '2026-03-20',
+    changes: [
+      'Class selection screen — choose your adventurer before each run',
+      'Warrior: heavy armour, 200 HP, powerful melee sword swing with red energy trail',
+      'Mage: wizard hat, 110 HP, instant lightning bolt strikes nearest enemy',
+      'Thief: dark hood, 130 HP, throws a spinning throwing star',
+      'Bowman: ranger hat, 150 HP, fires a fast arrow projectile',
+      'Each class has a unique pixel-art look and tailored stats',
+    ],
+  },
+  {
     version: '0.5',
     date: '2026-03-20',
     changes: [
