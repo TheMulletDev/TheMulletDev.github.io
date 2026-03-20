@@ -1053,7 +1053,7 @@ function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa', cl
     ctx.fillStyle = '#1e3a8a';
     // Hat cone — triangle path
     ctx.beginPath();
-    ctx.moveTo(4.5 * S, -5 * S);   // tip
+    ctx.moveTo(4.5 * S, -2 * S);   // tip
     ctx.lineTo(0,        2 * S);    // left base
     ctx.lineTo(9 * S,    2 * S);    // right base
     ctx.closePath();
@@ -1061,7 +1061,7 @@ function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa', cl
     // Cone highlight
     ctx.fillStyle = '#2563eb';
     ctx.beginPath();
-    ctx.moveTo(4.5 * S, -5 * S);
+    ctx.moveTo(4.5 * S, -2 * S);
     ctx.lineTo(0,        2 * S);
     ctx.lineTo(4.5 * S,  2 * S);
     ctx.closePath();
@@ -1073,7 +1073,7 @@ function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa', cl
     p(ctx, 0, 1, 7, 1);
     // Gold star on hat
     ctx.fillStyle = '#fbbf24';
-    ctx.fillRect(4 * S, -3 * S, S, S);
+    ctx.fillRect(4 * S, -1 * S, S, S);
     // Face
     ctx.fillStyle = C.skin;
     p(ctx, 2, 2, 5, 2);
