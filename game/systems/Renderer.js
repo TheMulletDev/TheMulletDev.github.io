@@ -34,17 +34,72 @@ function p(ctx, col, row, cols = 1, rows = 1) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 export class Renderer {
+  constructor() {
+    this._attackParticles = [];
+    this._lastTime        = Date.now();
+    this._wasAttacking    = false;
+  }
+
   drawPlayer(ctx, player) {
-    const { x, y, w, h, facing, state, invincible } = player;
-    if (invincible && Math.floor(Date.now() / 80) % 2 === 0) return;
+    const { x, y, w, h, facing, state, invincible, attackTimer } = player;
+
+    const now = Date.now();
+    const dt  = Math.min((now - this._lastTime) / 1000, 0.05);
+    this._lastTime = now;
+
+    // ── Spawn magic particles on attack start ────────────────────────────────
+    const isAttacking = state === 'attack';
+    if (isAttacking && !this._wasAttacking) {
+      const cx = x + (facing === 1 ? w + 10 : -10);
+      const cy = y + h * 0.35;
+      const COLORS = ['#a78bfa', '#c4b5fd', '#7dd3fc', '#f0abfc', '#ffffff', '#818cf8'];
+      for (let i = 0; i < 16; i++) {
+        const baseAngle = facing === 1 ? 0 : Math.PI;
+        const angle     = baseAngle + (Math.random() - 0.5) * 2.2;
+        const speed     = 80 + Math.random() * 160;
+        this._attackParticles.push({
+          x:     cx + (Math.random() - 0.5) * 28,
+          y:     cy + (Math.random() - 0.5) * 30,
+          vx:    Math.cos(angle) * speed,
+          vy:    Math.sin(angle) * speed - 40,
+          life:  1.0,
+          decay: 1.5 + Math.random() * 2.0,
+          size:  2 + Math.random() * 5,
+          color: COLORS[Math.floor(Math.random() * COLORS.length)],
+        });
+      }
+    }
+    this._wasAttacking = isAttacking;
+
+    // ── Update & draw particles (world space) ────────────────────────────────
+    if (this._attackParticles.length > 0) {
+      ctx.save();
+      for (let i = this._attackParticles.length - 1; i >= 0; i--) {
+        const pk = this._attackParticles[i];
+        pk.x   += pk.vx * dt;
+        pk.y   += pk.vy * dt;
+        pk.vy  += 220 * dt;
+        pk.life -= pk.decay * dt;
+        if (pk.life <= 0) { this._attackParticles.splice(i, 1); continue; }
+        const s = pk.size * (0.4 + pk.life * 0.6);
+        ctx.globalAlpha  = pk.life * 0.9;
+        ctx.fillStyle    = pk.color;
+        ctx.shadowColor  = pk.color;
+        ctx.shadowBlur   = 8;
+        ctx.fillRect(pk.x - s / 2, pk.y - s / 2, s, s);
+      }
+      ctx.restore();
+    }
+
+    if (invincible && Math.floor(now / 80) % 2 === 0) return;
 
     ctx.save();
     ctx.translate(x + w / 2, y + h);
     ctx.scale(facing, 1);
     ctx.translate(-w / 2, -h);
 
-    const frame = state === 'walk' ? Math.floor(Date.now() / 110) % 4 : 0;
-    _player(ctx, state, frame);
+    const frame = state === 'walk' ? Math.floor(now / 110) % 4 : 0;
+    _player(ctx, state, frame, attackTimer);
 
     ctx.restore();
   }
@@ -148,7 +203,7 @@ export class Renderer {
 //   Left side (cols 0–1) = back of head  →  mullet lives here.
 //   Right side (col 6–7) = front / face direction.
 // ═════════════════════════════════════════════════════════════════════════════
-function _player(ctx, state, frame) {
+function _player(ctx, state, frame, attackTimer = 0) {
 
   // ── Mullet (back of head, long hanging strand) ────────────────────────────
   ctx.fillStyle = C.hairD;
@@ -231,20 +286,59 @@ function _player(ctx, state, frame) {
 
   // ── Attack slash ──────────────────────────────────────────────────────────
   if (state === 'attack') {
+    const ATTACK_DUR = 0.25;
+    const t = 1 - Math.max(0, attackTimer / ATTACK_DUR); // 0 → 1 during attack
+
+    const arcCx = 9 * S + 4; // 40
+    const arcCy = 5 * S;     // 20
+
+    // Arc sweeps from upper-right downward as t goes 0→1
+    const startAngle = -1.5 + t * 0.5;
+    const endAngle   = startAngle + 0.8 + t * 1.0;
+
+    const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI);
+
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,230,60,0.92)';
-    ctx.lineWidth = 7;
-    ctx.shadowColor = '#ffe000';
-    ctx.shadowBlur = 16;
+    ctx.lineCap = 'round';
+
+    // Outer glow arc
+    ctx.strokeStyle = `rgba(167,139,250,${(0.45 + 0.45 * pulse).toFixed(2)})`;
+    ctx.lineWidth   = 11;
+    ctx.shadowColor = '#a78bfa';
+    ctx.shadowBlur  = 20 + 8 * pulse;
     ctx.beginPath();
-    ctx.arc(9 * S + 4, 5 * S, 34, -1.1, 0.7);
+    ctx.arc(arcCx, arcCy, 38, startAngle, endAngle);
     ctx.stroke();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = '#fffde7';
-    ctx.shadowBlur = 0;
+
+    // Mid arc
+    ctx.strokeStyle = `rgba(196,181,253,${(0.65 + 0.3 * pulse).toFixed(2)})`;
+    ctx.lineWidth   = 5;
+    ctx.shadowBlur  = 10;
     ctx.beginPath();
-    ctx.arc(9 * S + 4, 5 * S, 28, -0.9, 0.5);
+    ctx.arc(arcCx, arcCy, 31, startAngle + 0.08, endAngle - 0.05);
     ctx.stroke();
+
+    // Bright core
+    ctx.strokeStyle = `rgba(255,255,255,${(0.75 * pulse).toFixed(2)})`;
+    ctx.lineWidth   = 2;
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur  = 6;
+    ctx.beginPath();
+    ctx.arc(arcCx, arcCy, 25, startAngle + 0.15, endAngle - 0.1);
+    ctx.stroke();
+
+    // Leading-edge flash: small bright dot at the tip of the sweep
+    if (t > 0.05 && t < 0.92) {
+      const tipX = arcCx + Math.cos(endAngle) * 36;
+      const tipY = arcCy + Math.sin(endAngle) * 36;
+      ctx.fillStyle   = 'rgba(255,255,255,0.95)';
+      ctx.shadowColor = '#c4b5fd';
+      ctx.shadowBlur  = 14;
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, 3 + 2 * (1 - t), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.restore();
   }
 }
