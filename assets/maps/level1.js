@@ -164,4 +164,97 @@ export const LEVEL1 = {
   ],
 
   playerStart: { col: 3, row: 38 },
+
+  /**
+   * Purely visual props — no collision. type + world-pixel (x, y) top-left.
+   * flowers also carry a seed value to vary petal colours per cluster.
+   *
+   * Surface y for a platform at row R = R * 48.
+   * Prop y = surface_y − prop_height (so the prop sits on top).
+   */
+  decorations: [
+    // ── Ground (row 39, surface y = 1872) ──────────────────────────────────
+    { type: 'flowers',   x:   36, y: 1852, seed: 0 },
+    { type: 'haybale',  x:  211, y: 1844 },
+    { type: 'stump',    x:  466, y: 1850 },
+    { type: 'signpost', x:  576, y: 1816 },
+    { type: 'barrel',   x:  674, y: 1842 },
+    { type: 'flowers',  x:  763, y: 1852, seed: 2 },
+    { type: 'toadstool',x: 1060, y: 1852 },
+    { type: 'crate',    x: 1152, y: 1844 },
+    { type: 'fence',    x: 1240, y: 1848 },
+
+    // ── Step row 37 (cols 0-5, 22-27) ─────────────────────────────────────
+    { type: 'toadstool', x: 144, y: 1756 },
+
+    // ── Floor 1 (row 35, surface y = 1680) ─────────────────────────────────
+    { type: 'toadstool', x: 168, y: 1660 },
+    { type: 'barrel',    x: 432, y: 1650 },
+    { type: 'flowers',   x: 840, y: 1660, seed: 1 },
+    { type: 'crate',     x: 1152, y: 1652 },
+
+    // ── Floor 2 (row 31, surface y = 1488) ─────────────────────────────────
+    { type: 'flowers',   x:  240, y: 1468, seed: 3 },
+    { type: 'stump',     x:  528, y: 1466 },
+    { type: 'toadstool', x:  768, y: 1468 },
+    { type: 'haybale',   x: 1056, y: 1461 },
+
+    // ── Step row 29 (cols 1-5, 22-26) ─────────────────────────────────────
+    { type: 'flowers',   x:   96, y: 1372, seed: 4 },
+    { type: 'toadstool', x: 1152, y: 1372 },
+
+    // ── Floor 3 (row 27, surface y = 1296) ─────────────────────────────────
+    { type: 'toadstool', x:   96, y: 1276 },
+    { type: 'barrel',    x:  384, y: 1266 },
+    { type: 'flowers',   x:  912, y: 1276, seed: 5 },
+    { type: 'fence',     x: 1200, y: 1272 },
+
+    // ── Step row 25 (cols 9-18) ────────────────────────────────────────────
+    { type: 'signpost',  x:  624, y: 1144 },
+
+    // ── Floor 4 (row 23, surface y = 1104) ─────────────────────────────────
+    { type: 'stump',     x:  144, y: 1082 },
+    { type: 'toadstool', x:  480, y: 1084 },
+    { type: 'haybale',   x:  816, y: 1077 },
+    { type: 'lantern',   x: 1152, y: 1064 },
+
+    // ── Step row 21 (cols 0-4, 23-27) ─────────────────────────────────────
+    { type: 'flowers',   x:   48, y:  988, seed: 1 },
+    { type: 'toadstool', x: 1200, y:  988 },
+
+    // ── Floor 5 (row 19, surface y = 912) ──────────────────────────────────
+    { type: 'flowers',   x:  384, y:  892, seed: 2 },
+    { type: 'signpost',  x:  576, y:  856 },
+    { type: 'crate',     x:  672, y:  884 },
+    { type: 'toadstool', x:  912, y:  892 },
+
+    // ── Step row 17 (cols 2-6, 21-25) ─────────────────────────────────────
+    { type: 'barrel',    x:  192, y:  786 },
+    { type: 'toadstool', x: 1104, y:  796 },
+
+    // ── Floor 6 (row 15, surface y = 720) ──────────────────────────────────
+    { type: 'barrel',    x:   48, y:  690 },
+    { type: 'flowers',   x:  336, y:  700, seed: 0 },
+    { type: 'haybale',   x:  912, y:  693 },
+    { type: 'toadstool', x: 1248, y:  700 },
+
+    // ── Step row 13 (cols 7-11, 16-20) ────────────────────────────────────
+    { type: 'flowers',   x:  432, y:  604, seed: 3 },
+    { type: 'toadstool', x:  816, y:  604 },
+
+    // ── Floor 7 (row 11, surface y = 528) ──────────────────────────────────
+    { type: 'stump',     x:  144, y:  506 },
+    { type: 'toadstool', x:  432, y:  508 },
+    { type: 'flowers',   x:  768, y:  508, seed: 4 },
+    { type: 'barrel',    x: 1104, y:  498 },
+
+    // ── Step row 9 (cols 10-16) ────────────────────────────────────────────
+    { type: 'crate',     x:  576, y:  404 },
+
+    // ── Top floor (row 7, surface y = 336) ─────────────────────────────────
+    { type: 'flowers',   x:  240, y:  316, seed: 5 },
+    { type: 'signpost',  x:  528, y:  280 },
+    { type: 'toadstool', x:  720, y:  316 },
+    { type: 'haybale',   x:  960, y:  309 },
+  ],
 };

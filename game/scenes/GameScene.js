@@ -128,6 +128,7 @@ export class GameScene {
     camera.apply(ctx);
     renderer.drawBackground(ctx, camera, tilemap.width, tilemap.height);
     tilemap.draw(ctx, camera);
+    renderer.drawDecorations(ctx, LEVEL1.decorations);
 
     // Enemies
     for (const e of enemies) renderer.drawEnemy(ctx, e);
