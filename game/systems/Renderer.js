@@ -51,17 +51,29 @@ export class Renderer {
     this._lastTime = now;
     this._dt = dt;
 
-    // Weapon-aware colours for arc and particles
-    const weaponColor = weapon?.color ?? '#a78bfa';
-    const PARTICLE_PALETTES = {
-      iron_sword: ['#e8c84a', '#ffd700', '#fff9a0', '#fbbf24', '#ffffff'],
-      magic_wand:  ['#c084fc', '#e879f9', '#818cf8', '#a5f3fc', '#ffffff'],
-    };
-    const particleColors = PARTICLE_PALETTES[weapon?.id] ?? ['#a78bfa', '#c4b5fd', '#7dd3fc', '#f0abfc', '#ffffff', '#818cf8'];
+    // Class + weapon-aware colours for arc and particles
+    const clsId = playerClass?.id ?? 'warrior';
+    const CLASS_WEAPON_COLORS = { warrior: '#ef4444', mage: '#818cf8', thief: '#4ade80', bowman: '#fb923c' };
+    const weaponColor = clsId === 'warrior'
+      ? '#ef4444'
+      : (weapon?.color ?? CLASS_WEAPON_COLORS[clsId] ?? '#a78bfa');
 
-    // ── Spawn magic particles on attack start ────────────────────────────────
+    const CLASS_PARTICLES = {
+      warrior: ['#ef4444', '#f97316', '#fbbf24', '#ffffff', '#fca5a5'],
+      mage:    ['#818cf8', '#a5f3fc', '#c084fc', '#e879f9', '#ffffff'],
+      thief:   ['#4ade80', '#22d3ee', '#a3e635', '#ffffff', '#bbf7d0'],
+      bowman:  ['#fb923c', '#fbbf24', '#84cc16', '#ffffff', '#fed7aa'],
+    };
+    const WEAPON_PARTICLES = {
+      iron_sword: ['#e8c84a', '#ffd700', '#fff9a0', '#fbbf24', '#ffffff'],
+      magic_wand: ['#c084fc', '#e879f9', '#818cf8', '#a5f3fc', '#ffffff'],
+    };
+    const particleColors = WEAPON_PARTICLES[weapon?.id] ?? CLASS_PARTICLES[clsId] ?? ['#a78bfa', '#c4b5fd', '#7dd3fc', '#f0abfc', '#ffffff'];
+
+    // ── Spawn attack particles on rising edge (warrior + mage only) ──────────
     const isAttacking = state === 'attack';
-    if (isAttacking && !this._wasAttacking) {
+    const spawnParticles = clsId !== 'thief' && clsId !== 'bowman';
+    if (isAttacking && !this._wasAttacking && spawnParticles) {
       const cx = x + (facing === 1 ? w + 10 : -10);
       const cy = y + h * 0.35;
       const COLORS = particleColors;
@@ -500,6 +512,129 @@ export class Renderer {
     }
 
     ctx.restore();
+  }
+
+  // ── Projectiles ───────────────────────────────────────────────────────────
+
+  drawProjectiles(ctx, projectiles) {
+    if (!projectiles.length) return;
+    for (const proj of projectiles) {
+      const cx = proj.x + proj.w / 2;
+      const cy = proj.y + proj.h / 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+
+      if (proj.type === 'star') {
+        // Spinning shuriken
+        ctx.rotate(proj.angle);
+        ctx.shadowColor = '#4ade80';
+        ctx.shadowBlur  = 12;
+        ctx.fillStyle   = '#e2e8f0';
+        // 4 blades, each a triangle pointing outward
+        for (let i = 0; i < 4; i++) {
+          ctx.save();
+          ctx.rotate((i / 4) * Math.PI * 2);
+          ctx.beginPath();
+          ctx.moveTo(0, -8);
+          ctx.lineTo(-3, -1);
+          ctx.lineTo( 3, -1);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+        // Centre hub
+        ctx.fillStyle = '#64748b';
+        ctx.shadowBlur = 4;
+        ctx.beginPath(); ctx.arc(0, 0, 2.8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#cbd5e1';
+        ctx.beginPath(); ctx.arc(0, 0, 1.2, 0, Math.PI * 2); ctx.fill();
+
+      } else if (proj.type === 'arrow') {
+        // Arrow in flight
+        const dir = proj.vx >= 0 ? 1 : -1;
+        ctx.shadowColor = '#fb923c';
+        ctx.shadowBlur  = 6;
+        // Shaft
+        ctx.strokeStyle = '#92400e';
+        ctx.lineWidth   = 2;
+        ctx.beginPath();
+        ctx.moveTo(-dir * 11, 0);
+        ctx.lineTo( dir *  4, 0);
+        ctx.stroke();
+        // Arrowhead
+        ctx.fillStyle   = '#94a3b8';
+        ctx.shadowColor = '#e2e8f0';
+        ctx.shadowBlur  = 4;
+        ctx.beginPath();
+        ctx.moveTo( dir * 11,  0);
+        ctx.lineTo( dir *  4, -3);
+        ctx.lineTo( dir *  4,  3);
+        ctx.closePath();
+        ctx.fill();
+        // Fletching
+        ctx.strokeStyle = '#fb923c';
+        ctx.lineWidth   = 1.5;
+        ctx.shadowBlur  = 0;
+        ctx.beginPath(); ctx.moveTo(-dir * 9, 0); ctx.lineTo(-dir * 13, -4); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-dir * 9, 0); ctx.lineTo(-dir * 13,  4); ctx.stroke();
+      }
+
+      ctx.restore();
+    }
+  }
+
+  // ── Lightning bolts ────────────────────────────────────────────────────────
+
+  drawLightning(ctx, lightningEffects) {
+    if (!lightningEffects.length) return;
+    for (const bolt of lightningEffects) {
+      const alpha = bolt.life / bolt.maxLife;
+      const pts   = bolt.branches;
+      ctx.save();
+
+      // Outer purple glow
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#818cf8';
+      ctx.lineWidth   = 4;
+      ctx.lineJoin    = 'round';
+      ctx.shadowColor = '#818cf8';
+      ctx.shadowBlur  = 22;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+
+      // Bright cyan core
+      ctx.strokeStyle = '#a5f3fc';
+      ctx.lineWidth   = 2;
+      ctx.shadowBlur  = 8;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+
+      // White-hot centre
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth   = 1;
+      ctx.shadowBlur  = 4;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+
+      // Strike flash at target (fades as bolt dissipates)
+      if (bolt.targetEnemy && alpha > 0.3) {
+        const last = pts[pts.length - 1];
+        const r    = 14 * alpha;
+        ctx.fillStyle   = '#e0e7ff';
+        ctx.shadowColor = '#818cf8';
+        ctx.shadowBlur  = 28;
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.beginPath(); ctx.arc(last.x, last.y, r, 0, Math.PI * 2); ctx.fill();
+      }
+
+      ctx.restore();
+    }
   }
 
   // ── Class selection screen ────────────────────────────────────────────────
@@ -1078,62 +1213,91 @@ function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa', cl
     p(ctx, 5, 9 + fOff + fLen, 2, 1);
   }
 
-  // ── Attack slash ──────────────────────────────────────────────────────────
+  // ── Attack visuals (class-specific) ─────────────────────────────────────────
   if (state === 'attack') {
     const ATTACK_DUR = 0.25;
-    const t = 1 - Math.max(0, attackTimer / ATTACK_DUR); // 0 → 1 during attack
-
-    const arcCx = 9 * S + 4; // 40
-    const arcCy = 5 * S;     // 20
-
-    // Arc sweeps from upper-right downward as t goes 0→1
-    const startAngle = -1.5 + t * 0.5;
-    const endAngle   = startAngle + 0.8 + t * 1.0;
-
+    const t     = 1 - Math.max(0, attackTimer / ATTACK_DUR); // 0→1
     const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI);
 
     ctx.save();
     ctx.lineCap = 'round';
 
-    // Outer glow arc — colour driven by equipped weapon
-    ctx.globalAlpha = 0.45 + 0.45 * pulse;
-    ctx.strokeStyle = weaponColor;
-    ctx.lineWidth   = 11;
-    ctx.shadowColor = weaponColor;
-    ctx.shadowBlur  = 20 + 8 * pulse;
-    ctx.beginPath();
-    ctx.arc(arcCx, arcCy, 38, startAngle, endAngle);
-    ctx.stroke();
+    if (cls === 'warrior') {
+      // ── Big red sword slash ─────────────────────────────────────────────────
+      const arcCx = 9 * S + 4;
+      const arcCy = 4 * S;
+      const startAngle = -1.6 + t * 0.4;
+      const endAngle   = startAngle + 1.2 + t * 1.2;
 
-    // Mid arc
-    ctx.globalAlpha = 0.65 + 0.3 * pulse;
-    ctx.lineWidth   = 5;
-    ctx.shadowBlur  = 10;
-    ctx.beginPath();
-    ctx.arc(arcCx, arcCy, 31, startAngle + 0.08, endAngle - 0.05);
-    ctx.stroke();
+      // Wide energy ring (outermost, very transparent)
+      ctx.globalAlpha = 0.22 * pulse;
+      ctx.strokeStyle = weaponColor;
+      ctx.lineWidth   = 26;
+      ctx.shadowColor = weaponColor;
+      ctx.shadowBlur  = 36;
+      ctx.beginPath(); ctx.arc(arcCx, arcCy, 62, startAngle, endAngle); ctx.stroke();
 
-    // Bright white core (always white)
-    ctx.globalAlpha = 0.75 * pulse;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth   = 2;
-    ctx.shadowColor = '#fff';
-    ctx.shadowBlur  = 6;
-    ctx.beginPath();
-    ctx.arc(arcCx, arcCy, 25, startAngle + 0.15, endAngle - 0.1);
-    ctx.stroke();
+      // Main outer glow
+      ctx.globalAlpha = 0.55 + 0.35 * pulse;
+      ctx.lineWidth   = 18;
+      ctx.shadowBlur  = 24 + 10 * pulse;
+      ctx.beginPath(); ctx.arc(arcCx, arcCy, 52, startAngle, endAngle); ctx.stroke();
 
-    // Leading-edge flash: small bright dot at the tip of the sweep
-    if (t > 0.05 && t < 0.92) {
-      const tipX = arcCx + Math.cos(endAngle) * 36;
-      const tipY = arcCy + Math.sin(endAngle) * 36;
-      ctx.fillStyle   = 'rgba(255,255,255,0.95)';
-      ctx.shadowColor = '#c4b5fd';
-      ctx.shadowBlur  = 14;
-      ctx.beginPath();
-      ctx.arc(tipX, tipY, 3 + 2 * (1 - t), 0, Math.PI * 2);
-      ctx.fill();
+      // Mid arc
+      ctx.globalAlpha = 0.7 + 0.25 * pulse;
+      ctx.lineWidth   = 8;
+      ctx.shadowBlur  = 12;
+      ctx.beginPath(); ctx.arc(arcCx, arcCy, 44, startAngle + 0.08, endAngle - 0.05); ctx.stroke();
+
+      // Bright white core
+      ctx.globalAlpha = 0.85 * pulse;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth   = 3;
+      ctx.shadowColor = '#fff';
+      ctx.shadowBlur  = 8;
+      ctx.beginPath(); ctx.arc(arcCx, arcCy, 36, startAngle + 0.15, endAngle - 0.1); ctx.stroke();
+
+      // Leading-edge spark
+      if (t > 0.05 && t < 0.92) {
+        const tipX = arcCx + Math.cos(endAngle) * 50;
+        const tipY = arcCy + Math.sin(endAngle) * 50;
+        ctx.fillStyle   = 'rgba(255,255,255,0.95)';
+        ctx.shadowColor = weaponColor;
+        ctx.shadowBlur  = 18;
+        ctx.beginPath(); ctx.arc(tipX, tipY, 5 + 3 * (1 - t), 0, Math.PI * 2); ctx.fill();
+      }
+
+    } else if (cls === 'mage') {
+      // ── Magic casting pulse ────────────────────────────────────────────────
+      const cx   = 4.5 * S;
+      const cy   = 5 * S;
+      const ring1 = 18 + t * 32;
+      const ring2 = 10 + t * 20;
+
+      // Expanding outer ring
+      ctx.globalAlpha = Math.max(0, 0.7 - t * 0.8);
+      ctx.strokeStyle = weaponColor;
+      ctx.lineWidth   = 4;
+      ctx.shadowColor = weaponColor;
+      ctx.shadowBlur  = 18;
+      ctx.beginPath(); ctx.arc(cx, cy, ring1, 0, Math.PI * 2); ctx.stroke();
+
+      // Inner ring
+      ctx.globalAlpha = Math.max(0, 0.9 - t * 0.9);
+      ctx.strokeStyle = '#a5f3fc';
+      ctx.lineWidth   = 2;
+      ctx.shadowBlur  = 10;
+      ctx.beginPath(); ctx.arc(cx, cy, ring2, 0, Math.PI * 2); ctx.stroke();
+
+      // Centre glow
+      ctx.globalAlpha = Math.max(0, 0.6 - t * 0.7) * pulse;
+      ctx.fillStyle   = '#e0e7ff';
+      ctx.shadowColor = weaponColor;
+      ctx.shadowBlur  = 20;
+      ctx.beginPath(); ctx.arc(cx, cy, 6 * (1 - t * 0.5), 0, Math.PI * 2); ctx.fill();
+
     }
+    // Thief and Bowman: no sprite arc — projectile is the visual
 
     ctx.restore();
   }

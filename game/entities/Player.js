@@ -34,10 +34,11 @@ export class Player extends Entity {
     this.pendingTexts = []; // [{ text, color }]
 
     // Attack state
-    this.attacking     = false;
-    this.attackTimer   = 0;
-    this.attackCooldown = 0;
-    this.attackDamage  = cs.attackDamage ?? 25;
+    this.attacking          = false;
+    this.attackTimer        = 0;
+    this.attackCooldown     = 0;
+    this.attackDamage       = cs.attackDamage ?? 25;
+    this._attackJustStarted = false; // rising-edge signal drained by GameScene
 
     // Invincibility frames
     this.invincible    = false;
@@ -113,9 +114,10 @@ export class Player extends Entity {
 
     // Attack
     if (input.isAttack() && this.attackCooldown <= 0 && !this.attacking) {
-      this.attacking    = true;
-      this.attackTimer  = ATTACK_DURATION;
-      this.attackCooldown = ATTACK_COOLDOWN;
+      this.attacking          = true;
+      this.attackTimer        = ATTACK_DURATION;
+      this.attackCooldown     = ATTACK_COOLDOWN;
+      this._attackJustStarted = true;
     }
 
     // Animation state

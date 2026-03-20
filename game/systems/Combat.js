@@ -89,6 +89,43 @@ export class Combat {
     }
   }
 
+  /** Check a single projectile against all enemies; marks proj.hit on contact. */
+  resolveProjectile(proj, enemies, player) {
+    for (const enemy of enemies) {
+      if (enemy.dead) continue;
+      if (overlaps(proj, enemy)) {
+        enemy.takeDamage(proj.damage);
+        this.floatingTexts.push(
+          new FloatingText(enemy.x + enemy.w / 2, enemy.y - 10, `-${proj.damage}`, '#ff4')
+        );
+        if (enemy.dead) {
+          player.gainExp(enemy.exp);
+          this.floatingTexts.push(
+            new FloatingText(enemy.x + enemy.w / 2, enemy.y - 32, `+${enemy.exp} EXP`, '#4ef')
+          );
+        }
+        proj.hit = true;
+        return;
+      }
+    }
+  }
+
+  /** Apply instant lightning damage to a bolt's target enemy. */
+  resolveLightning(bolt, player) {
+    const enemy = bolt.targetEnemy;
+    if (!enemy || enemy.dead) return;
+    enemy.takeDamage(bolt.damage);
+    this.floatingTexts.push(
+      new FloatingText(enemy.x + enemy.w / 2, enemy.y - 10, `-${bolt.damage}`, '#a5f3fc')
+    );
+    if (enemy.dead) {
+      player.gainExp(enemy.exp);
+      this.floatingTexts.push(
+        new FloatingText(enemy.x + enemy.w / 2, enemy.y - 32, `+${enemy.exp} EXP`, '#4ef')
+      );
+    }
+  }
+
   update(dt) {
     for (const ft of this.floatingTexts) ft.update(dt);
     this.floatingTexts = this.floatingTexts.filter(ft => ft.life > 0);
