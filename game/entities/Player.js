@@ -14,10 +14,12 @@ const ATTACK_COOLDOWN  = 0.3;
 const INVINCIBLE_DURATION = 0.6;
 
 export class Player extends Entity {
-  constructor(x, y) {
+  constructor(x, y, playerClass = null) {
     super(x, y, 36, 52);
-    this.maxHp = 150;
-    this.hp    = 150;
+    this.playerClass = playerClass;
+    const cs = playerClass?.stats ?? {};
+    this.maxHp = cs.maxHp ?? 150;
+    this.hp    = this.maxHp;
     this.exp   = 0;
     this.level = 1;
     this.expToNext = 100;
@@ -35,7 +37,7 @@ export class Player extends Entity {
     this.attacking     = false;
     this.attackTimer   = 0;
     this.attackCooldown = 0;
-    this.attackDamage  = 25;
+    this.attackDamage  = cs.attackDamage ?? 25;
 
     // Invincibility frames
     this.invincible    = false;

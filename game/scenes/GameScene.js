@@ -9,6 +9,7 @@ import { Drop }     from '../entities/Drop.js';
 import { LEVEL1 }     from '../../assets/maps/level1.js';
 import { WORLDS }     from '../../assets/worlds.js';
 import { CHANGELOG }  from '../../assets/changelog.js';
+import { CLASSES }    from '../assets/classes.js';
 
 export class GameScene {
   constructor(canvas, input) {
@@ -18,14 +19,20 @@ export class GameScene {
     this.combat   = new Combat();
     this.renderer = new Renderer();
 
+    // Class selection state (shown before game starts and after death)
+    this._state     = 'classSelect';  // 'classSelect' | 'playing'
+    this._classIdx  = 0;              // currently highlighted class index
+    this._prevCsLeft    = false;
+    this._prevCsRight   = false;
+    this._prevCsConfirm = false;
+
     // World progression state
     this._worldIdx        = 0;           // index into WORLDS[]
     this._worldTransition = null;        // { phase, t, duration, targetIdx }
 
-    const ps = LEVEL1.playerStart;
-    this.player = new Player(ps.col * TILE, (ps.row - 1) * TILE);
-
-    this.enemies = this._spawnEnemies(WORLDS[0]);
+    // Player and enemies — created when class is selected
+    this.player  = null;
+    this.enemies = [];
 
     this.camera = new Camera(
       canvas.width, canvas.height,
@@ -45,14 +52,18 @@ export class GameScene {
     this._touchScrollStart     = 0;
     this._touchMoved           = false;
 
-    // Click — toggle changelog or close it
+    // Click — handle class select or toggle changelog
     this._handleClick = (e) => {
       const r   = canvas.el.getBoundingClientRect();
       const scaleX = canvas.width  / r.width;
       const scaleY = canvas.height / r.height;
       const mx  = (e.clientX - r.left) * scaleX;
       const my  = (e.clientY - r.top)  * scaleY;
-      this._hitTestChangelog(mx, my);
+      if (this._state === 'classSelect') {
+        this._hitTestClassSelect(mx, my);
+      } else {
+        this._hitTestChangelog(mx, my);
+      }
     };
     canvas.el.addEventListener('click', this._handleClick);
 
@@ -79,7 +90,7 @@ export class GameScene {
     };
     canvas.el.addEventListener('touchmove', this._handleTouchMove, { passive: true });
 
-    // Touch end — treat as tap (close/open) only if finger barely moved
+    // Touch end — treat as tap only if finger barely moved
     this._handleTouchEnd = (e) => {
       if (this._touchMoved) { this._touchMoved = false; return; }
       const r     = canvas.el.getBoundingClientRect();
@@ -88,7 +99,11 @@ export class GameScene {
       const t     = e.changedTouches[0];
       const mx    = (t.clientX - r.left) * scaleX;
       const my    = (t.clientY - r.top)  * scaleY;
-      this._hitTestChangelog(mx, my);
+      if (this._state === 'classSelect') {
+        this._hitTestClassSelect(mx, my);
+      } else {
+        this._hitTestChangelog(mx, my);
+      }
     };
     canvas.el.addEventListener('touchend', this._handleTouchEnd, { passive: true });
 
@@ -144,6 +159,39 @@ export class GameScene {
     }
   }
 
+  /** Hit-test taps/clicks on the class selection screen. */
+  _hitTestClassSelect(mx, my) {
+    const { canvas, renderer } = this;
+    const rects   = renderer.classSelectCardRects(canvas.width, canvas.height, CLASSES.length);
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        if (i === this._classIdx) {
+          this._startGame(CLASSES[i]);  // second tap on selected card confirms
+        } else {
+          this._classIdx = i;           // first tap selects
+        }
+        return;
+      }
+    }
+    const btn = renderer.classSelectPlayBtn(canvas.width, canvas.height);
+    if (mx >= btn.x && mx <= btn.x + btn.w && my >= btn.y && my <= btn.y + btn.h) {
+      this._startGame(CLASSES[this._classIdx]);
+    }
+  }
+
+  /** Begin the game with the chosen class. */
+  _startGame(cls) {
+    this._state           = 'playing';
+    this._worldIdx        = 0;
+    this._worldTransition = null;
+    this.drops            = [];
+    this._deadTimer       = 0;
+    const ps     = LEVEL1.playerStart;
+    this.player  = new Player(ps.col * TILE, (ps.row - 1) * TILE, cls);
+    this.enemies = this._spawnEnemies(WORLDS[0]);
+  }
+
   /** Spawn enemies for the given world, applying stat multipliers and skins. */
   _spawnEnemies(world) {
     const { enemyMult, enemySkin } = world;
@@ -175,10 +223,29 @@ export class GameScene {
   }
 
   update(dt) {
-    const { player, enemies, tilemap, combat, camera, canvas } = this;
+    const { camera, canvas } = this;
 
     // Resize camera if window changed
     camera.resize(canvas.width, canvas.height);
+
+    // ── Class selection input ─────────────────────────────────────────────────
+    if (this._state === 'classSelect') {
+      const kLeft    = this.input.isLeft();
+      const kRight   = this.input.isRight();
+      const kConfirm = this.input.isJump() || this.input.isAttack()
+                     || this.input.keys['Enter'] || this.input.keys['Space'];
+
+      if (kLeft  && !this._prevCsLeft)    this._classIdx = (this._classIdx - 1 + CLASSES.length) % CLASSES.length;
+      if (kRight && !this._prevCsRight)   this._classIdx = (this._classIdx + 1) % CLASSES.length;
+      if (kConfirm && !this._prevCsConfirm) this._startGame(CLASSES[this._classIdx]);
+
+      this._prevCsLeft    = kLeft;
+      this._prevCsRight   = kRight;
+      this._prevCsConfirm = kConfirm;
+      return;
+    }
+
+    const { player, enemies, tilemap, combat } = this;
 
     // --- World transition timer ---
     if (this._worldTransition) {
@@ -281,21 +348,33 @@ export class GameScene {
   }
 
   _respawn() {
-    this._deadTimer   = 0;
-    this._worldIdx    = 0;  // send player back to World 1 on death
+    this._deadTimer       = 0;
+    this._worldIdx        = 0;
     this._worldTransition = null;
-    this.drops = [];
-    const ps = LEVEL1.playerStart;
-    this.player  = new Player(ps.col * TILE, (ps.row - 1) * TILE);
-    this.enemies = this._spawnEnemies(WORLDS[0]);
+    this.drops            = [];
+    this.player           = null;
+    this.enemies          = [];
+    // Return to class select; _classIdx stays so the last-used class is pre-highlighted
+    this._state           = 'classSelect';
+    this._prevCsLeft    = false;
+    this._prevCsRight   = false;
+    this._prevCsConfirm = false;
   }
 
   draw() {
-    const { canvas, camera, tilemap, player, enemies, drops, combat, renderer } = this;
-    const ctx   = canvas.ctx;
-    const world = WORLDS[this._worldIdx];
+    const { canvas, renderer } = this;
+    const ctx = canvas.ctx;
 
     canvas.clear();
+
+    // ── Class selection screen ────────────────────────────────────────────────
+    if (this._state === 'classSelect') {
+      renderer.drawClassSelect(ctx, canvas.width, canvas.height, CLASSES, this._classIdx);
+      return;
+    }
+
+    const { camera, tilemap, player, enemies, drops, combat } = this;
+    const world = WORLDS[this._worldIdx];
 
     // Background (world space)
     camera.apply(ctx);
