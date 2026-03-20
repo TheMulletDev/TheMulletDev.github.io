@@ -120,14 +120,14 @@ export class Renderer {
   }
 
   drawMobileControls(ctx, canvasW, canvasH) {
-    const btnW   = canvasW * 0.12;
-    const btnH   = canvasH * 0.12;
+    const btnW   = canvasW * 0.16;
+    const btnH   = canvasH * 0.16;
     const padBot = canvasH * 0.04;
     const leftX  = canvasW * 0.04;
     const rightX = leftX + btnW + canvasW * 0.02;
     const btnY   = canvasH - btnH - padBot;
 
-    const btnSize = Math.min(canvasW, canvasH) * 0.10;
+    const btnSize = Math.min(canvasW, canvasH) * 0.14;
     const rpad    = canvasH * 0.04;
     const jumpX   = canvasW - btnSize * 2 - rpad * 2;
     const attackX = canvasW - btnSize - rpad;

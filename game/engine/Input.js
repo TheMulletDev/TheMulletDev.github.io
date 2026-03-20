@@ -45,8 +45,8 @@ export class Input {
     for (const { x, y } of this._touches.values()) {
       // Left half = movement
       if (x < w / 2) {
-        const btnW = w * 0.12;
-        const btnH = h * 0.12;
+        const btnW = w * 0.16;
+        const btnH = h * 0.16;
         const btnY = h - btnH - h * 0.04;
         const leftX  = w * 0.04;
         const rightX = w * 0.04 + btnW + w * 0.02;
@@ -55,7 +55,7 @@ export class Input {
         if (y > btnY - btnH && x > rightX && x < rightX + btnW) this.virtual.right = true;
       } else {
         // Right half = action buttons
-        const btnSize = Math.min(w, h) * 0.10;
+        const btnSize = Math.min(w, h) * 0.14;
         const pad = h * 0.04;
         const jumpX   = w - btnSize * 2 - pad * 2;
         const attackX = w - btnSize - pad;
