@@ -199,6 +199,7 @@ export class Player extends Entity {
       this.maxHp += 20;
       this.hp = this.maxHp;
       this.attackDamage += 5; // weapon bonus is already included in attackDamage
+      this.leveledUp = true;  // drained each frame by GameScene → triggers fireworks
     }
   }
 }

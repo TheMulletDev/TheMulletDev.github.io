@@ -98,6 +98,12 @@ export class GameScene {
     }
     player.pendingTexts = [];
 
+    // --- Level-up fireworks ---
+    if (player.leveledUp) {
+      this.renderer.triggerLevelUp(player.x + player.w / 2, player.y + player.h / 2);
+      player.leveledUp = false;
+    }
+
     // --- Camera ---
     camera.follow(player);
 
@@ -138,6 +144,7 @@ export class GameScene {
 
     // Player
     renderer.drawPlayer(ctx, player);
+    renderer.drawFireworks(ctx);
 
     // Floating damage numbers (world space)
     combat.draw(ctx);

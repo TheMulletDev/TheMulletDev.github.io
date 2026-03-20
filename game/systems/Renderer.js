@@ -38,6 +38,9 @@ export class Renderer {
     this._attackParticles = [];
     this._lastTime        = Date.now();
     this._wasAttacking    = false;
+    this._dt              = 0;
+    this._fireworkQueue   = []; // pending burst { x, y, fireAt, colors }
+    this._fireworks       = []; // active sparkle particles
   }
 
   drawPlayer(ctx, player) {
@@ -46,6 +49,7 @@ export class Renderer {
     const now = Date.now();
     const dt  = Math.min((now - this._lastTime) / 1000, 0.05);
     this._lastTime = now;
+    this._dt = dt;
 
     // Weapon-aware colours for arc and particles
     const weaponColor = weapon?.color ?? '#a78bfa';
@@ -277,6 +281,79 @@ export class Renderer {
       }
       ctx.restore();
     }
+  }
+
+  /** Queue 5 staggered firework bursts centred on the player. */
+  triggerLevelUp(cx, cy) {
+    const now = Date.now();
+    // Each burst: world-offset from player centre, delay, colour palette
+    const bursts = [
+      { ox:   0, oy: -30,  delay:   0, colors: ['#ffd700', '#fff44f', '#ffffff', '#ffa500'] },
+      { ox: -52, oy: -70,  delay: 200, colors: ['#ff69b4', '#00eeff', '#ff44cc', '#ccddff'] },
+      { ox:  52, oy: -70,  delay: 200, colors: ['#00ff88', '#bf80ff', '#44ff44', '#dd44ff'] },
+      { ox: -24, oy: -120, delay: 420, colors: ['#ffd700', '#ff8800', '#ffffff', '#ffee44'] },
+      { ox:  24, oy: -120, delay: 420, colors: ['#88ffff', '#ff88ff', '#ffff88', '#ffffff'] },
+    ];
+    for (const b of bursts) {
+      this._fireworkQueue.push({
+        x:      cx + b.ox,
+        y:      cy + b.oy,
+        fireAt: now + b.delay,
+        colors: b.colors,
+      });
+    }
+  }
+
+  /** Update and draw all active firework particles (call in world space). */
+  drawFireworks(ctx) {
+    const now = Date.now();
+    const dt  = this._dt || 0.016;
+
+    // Fire any queued bursts whose time has come
+    for (let i = this._fireworkQueue.length - 1; i >= 0; i--) {
+      const b = this._fireworkQueue[i];
+      if (now < b.fireAt) continue;
+      this._fireworkQueue.splice(i, 1);
+
+      // Radial ring of 24 sparkles + 8 fast streaks
+      for (let j = 0; j < 32; j++) {
+        const angle = (j / 32) * Math.PI * 2;
+        const fast  = j % 4 === 0;
+        const speed = fast ? 160 + Math.random() * 80 : 60 + Math.random() * 90;
+        this._fireworks.push({
+          x:     b.x + (Math.random() - 0.5) * 10,
+          y:     b.y + (Math.random() - 0.5) * 10,
+          vx:    Math.cos(angle) * speed,
+          vy:    Math.sin(angle) * speed - (fast ? 40 : 10),
+          life:  1.0,
+          decay: fast ? 0.9 + Math.random() * 0.4 : 0.5 + Math.random() * 0.3,
+          size:  fast ? 2 + Math.random() * 2 : 3 + Math.random() * 3,
+          color: b.colors[Math.floor(Math.random() * b.colors.length)],
+        });
+      }
+    }
+
+    if (this._fireworks.length === 0) return;
+
+    ctx.save();
+    for (let i = this._fireworks.length - 1; i >= 0; i--) {
+      const p = this._fireworks[i];
+      p.x   += p.vx * dt;
+      p.y   += p.vy * dt;
+      p.vy  += 180 * dt; // gravity
+      p.life -= p.decay * dt;
+      if (p.life <= 0) { this._fireworks.splice(i, 1); continue; }
+
+      const s = p.size * (0.3 + p.life * 0.7);
+      ctx.globalAlpha = Math.min(1, p.life * 1.2);
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur  = 10;
+      // Star / sparkle shape: two overlapping rects (cross + diagonal)
+      ctx.fillRect(p.x - s * 0.5, p.y - s * 2,   s,       s * 4);
+      ctx.fillRect(p.x - s * 2,   p.y - s * 0.5, s * 4,   s);
+    }
+    ctx.restore();
   }
 
   drawDrops(ctx, drops) {
