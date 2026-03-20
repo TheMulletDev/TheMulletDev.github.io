@@ -6,8 +6,9 @@ export const WEAPONS = {
   magic_wand:  { id: 'magic_wand',  name: 'Magic Wand',  dmgBonus: 45, color: '#c084fc' },
 };
 
-const WALK_SPEED   = 220;
-const JUMP_FORCE   = -620;
+const WALK_SPEED      = 220;
+const JUMP_FORCE      = -620;
+const JUMP_FORCE_2    = -460; // double-jump is slightly shorter
 const ATTACK_DURATION = 0.25; // seconds
 const ATTACK_COOLDOWN  = 0.3;
 const INVINCIBLE_DURATION = 0.6;
@@ -46,6 +47,8 @@ export class Player extends Entity {
     // Jump buffer (forgiving input)
     this.jumpBufferTimer = 0;
     this.coyoteTimer     = 0;
+    this.jumpsLeft       = 1;  // air jumps remaining (reset on landing)
+    this._prevJump       = false; // edge-detection: was jump held last frame
 
     // Animation state
     this.state = 'idle'; // idle | walk | jump | fall | attack
@@ -83,14 +86,22 @@ export class Player extends Entity {
       this.vx *= 0.7; // slow down while attacking
     }
 
-    // Jump buffer
-    if (input.isJump()) this.jumpBufferTimer = 0.12;
+    // Rising-edge jump detection (prevent held key from re-triggering)
+    const jumpHeld       = input.isJump();
+    const jumpJustPressed = jumpHeld && !this._prevJump;
+    this._prevJump = jumpHeld;
 
-    // Actual jump (with coyote time)
+    if (jumpJustPressed) this.jumpBufferTimer = 0.12;
+
+    // First jump — ground or coyote window
     if (this.jumpBufferTimer > 0 && this.coyoteTimer > 0) {
       this.vy = JUMP_FORCE;
       this.jumpBufferTimer = 0;
       this.coyoteTimer = 0;
+    // Double jump — must be in the air, coyote expired, and have an air jump left
+    } else if (jumpJustPressed && !this.onGround && this.coyoteTimer <= 0 && this.jumpsLeft > 0) {
+      this.vy = JUMP_FORCE_2;
+      this.jumpsLeft--;
     }
 
     // Potion use
@@ -119,7 +130,10 @@ export class Player extends Entity {
 
   /** Call AFTER physics resolves onGround */
   postPhysics() {
-    if (this.onGround) this.coyoteTimer = 0.1;
+    if (this.onGround) {
+      this.coyoteTimer = 0.1;
+      this.jumpsLeft   = 1; // restore air jump on landing
+    }
   }
 
   /** Returns attack hitbox or null */
