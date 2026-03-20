@@ -236,7 +236,26 @@ export class Renderer {
     _drawBtn(ctx, rightX,  btnY,   btnW,    btnH,    '▶');
     _drawBtn(ctx, potionX, rbtnY,  btnSize, btnSize, 'P', '#f0abfc');
     _drawBtn(ctx, jumpX,   rbtnY,  btnSize, btnSize, '↑', '#4af');
-    _drawBtn(ctx, attackX, rbtnY,  btnSize, btnSize, 'A', '#fa4');
+    // Attack button — draw shell then overlay a sword icon
+    _drawBtn(ctx, attackX, rbtnY, btnSize, btnSize, '', '#fa4');
+    const scx = attackX + btnSize / 2;
+    const scy = rbtnY   + btnSize / 2;
+    const sz  = btnSize * 0.30;
+    ctx.save();
+    ctx.translate(scx, scy);
+    ctx.rotate(-Math.PI / 4);
+    ctx.fillStyle = '#f0f0ff';                                         // blade
+    ctx.fillRect(-sz * 0.14, -sz * 1.1, sz * 0.28, sz * 1.55);
+    ctx.beginPath();                                                    // tip
+    ctx.moveTo(-sz * 0.14, -sz * 1.1);
+    ctx.lineTo( sz * 0.14, -sz * 1.1);
+    ctx.lineTo(0, -sz * 1.55);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffd700';                                         // crossguard
+    ctx.fillRect(-sz * 0.55, sz * 0.08, sz * 1.10, sz * 0.22);
+    ctx.fillStyle = '#92400e';                                         // grip
+    ctx.fillRect(-sz * 0.11, sz * 0.30, sz * 0.22, sz * 0.52);
+    ctx.restore();
     ctx.globalAlpha = 1;
   }
 
