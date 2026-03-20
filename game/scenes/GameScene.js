@@ -5,7 +5,8 @@ import { Combat, FloatingText } from '../systems/Combat.js';
 import { Renderer } from '../systems/Renderer.js';
 import { Player }   from '../entities/Player.js';
 import { Enemy }    from '../entities/Enemy.js';
-import { Drop }     from '../entities/Drop.js';
+import { Drop }        from '../entities/Drop.js';
+import { Projectile }  from '../entities/Projectile.js';
 import { LEVEL1 }     from '../../assets/maps/level1.js';
 import { WORLDS }     from '../../assets/worlds.js';
 import { CHANGELOG }  from '../../assets/changelog.js';
@@ -186,6 +187,8 @@ export class GameScene {
     this._worldIdx        = 0;
     this._worldTransition = null;
     this.drops            = [];
+    this.projectiles      = [];
+    this.lightningEffects = [];
     this._deadTimer       = 0;
     const ps     = LEVEL1.playerStart;
     this.player  = new Player(ps.col * TILE, (ps.row - 1) * TILE, cls);
@@ -208,6 +211,47 @@ export class GameScene {
     });
   }
 
+  /** Find nearest enemy and fire an instant lightning bolt at it. */
+  _spawnLightning(player, enemies) {
+    const RANGE = 340;
+    let nearest = null, nearestDist = Infinity;
+    for (const e of enemies) {
+      if (e.dead) continue;
+      const dx = (e.x + e.w / 2) - (player.x + player.w / 2);
+      const dy = (e.y + e.h / 2) - (player.y + player.h / 2);
+      const d  = Math.sqrt(dx * dx + dy * dy);
+      if (d < RANGE && d < nearestDist) { nearest = e; nearestDist = d; }
+    }
+    const sx = player.x + player.w / 2;
+    const sy = player.y + player.h * 0.25;
+    const tx = nearest ? nearest.x + nearest.w / 2 : sx + player.facing * 200;
+    const ty = nearest ? nearest.y + nearest.h / 2 : sy + 80;
+    const bolt = {
+      x1: sx, y1: sy, x2: tx, y2: ty,
+      life: 0.45, maxLife: 0.45,
+      targetEnemy: nearest,
+      branches: this._makeLightningPath(sx, sy, tx, ty),
+      damage: player.attackDamage,
+    };
+    this.lightningEffects.push(bolt);
+    if (nearest) this.combat.resolveLightning(bolt, player);
+  }
+
+  _makeLightningPath(x1, y1, x2, y2) {
+    const SEGS = 7;
+    const pts  = [{ x: x1, y: y1 }];
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const px  = -dy / len, py = dx / len;   // perpendicular unit vector
+    for (let i = 1; i < SEGS; i++) {
+      const t = i / SEGS;
+      const jitter = (Math.random() - 0.5) * Math.min(len * 0.40, 65);
+      pts.push({ x: x1 + dx * t + px * jitter, y: y1 + dy * t + py * jitter });
+    }
+    pts.push({ x: x2, y: y2 });
+    return pts;
+  }
+
   /** Advance to the next world after the fade-out completes. */
   _loadNextWorld() {
     this._worldIdx = this._worldTransition.targetIdx;
@@ -218,8 +262,10 @@ export class GameScene {
     this.player.y  = (ps.row - 1) * TILE;
     this.player.vx = 0;
     this.player.vy = 0;
-    this.drops   = [];
-    this.enemies = this._spawnEnemies(world);
+    this.drops            = [];
+    this.projectiles      = [];
+    this.lightningEffects = [];
+    this.enemies          = this._spawnEnemies(world);
   }
 
   update(dt) {
@@ -289,9 +335,48 @@ export class GameScene {
     }
 
     // --- Combat ---
-    combat.resolvePlayerAttack(player, enemies);
+    const cls = player.playerClass?.id;
+
+    // Warrior uses melee hitbox; other classes rely on projectiles / lightning
+    if (!cls || cls === 'warrior') combat.resolvePlayerAttack(player, enemies);
     combat.resolveEnemyAttack(player, enemies);
     combat.update(dt);
+
+    // --- Class-specific attack spawning (rising-edge of attack input) ---
+    if (player._attackJustStarted) {
+      player._attackJustStarted = false;
+      const ox = player.facing === 1 ? player.x + player.w : player.x;
+      if (cls === 'thief') {
+        this.projectiles.push(
+          new Projectile(ox - 7, player.y + player.h * 0.35 - 7, player.facing * 700, 0, 'star', player.attackDamage)
+        );
+      } else if (cls === 'bowman') {
+        this.projectiles.push(
+          new Projectile(ox - 11, player.y + player.h * 0.28 - 3, player.facing * 560, 0, 'arrow', player.attackDamage)
+        );
+      } else if (cls === 'mage') {
+        this._spawnLightning(player, enemies);
+      }
+    }
+
+    // --- Projectile movement + collision ---
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const proj = this.projectiles[i];
+      proj.life -= dt;
+      proj.x    += proj.vx * dt;
+      proj.y    += proj.vy * dt;
+      if (proj.type === 'star') proj.angle += dt * Math.PI * 9;
+      const outOfBounds = proj.x < -120 || proj.x > tilemap.width + 120;
+      if (proj.life <= 0 || outOfBounds || proj.hit) { this.projectiles.splice(i, 1); continue; }
+      combat.resolveProjectile(proj, enemies, player);
+      if (proj.hit) this.projectiles.splice(i, 1);
+    }
+
+    // --- Lightning effect timers ---
+    for (let i = this.lightningEffects.length - 1; i >= 0; i--) {
+      this.lightningEffects[i].life -= dt;
+      if (this.lightningEffects[i].life <= 0) this.lightningEffects.splice(i, 1);
+    }
 
     // --- Drops: spawn from freshly killed enemies ---
     for (const e of enemies) {
@@ -352,6 +437,8 @@ export class GameScene {
     this._worldIdx        = 0;
     this._worldTransition = null;
     this.drops            = [];
+    this.projectiles      = [];
+    this.lightningEffects = [];
     this.player           = null;
     this.enemies          = [];
     // Return to class select; _classIdx stays so the last-used class is pre-highlighted
@@ -394,9 +481,15 @@ export class GameScene {
     // Drops (below player so they don't obscure combat)
     renderer.drawDrops(ctx, drops);
 
+    // Projectiles (in front of enemies, behind player)
+    renderer.drawProjectiles(ctx, this.projectiles);
+
     // Player
     renderer.drawPlayer(ctx, player);
     renderer.drawFireworks(ctx);
+
+    // Lightning (on top of everything in world space)
+    renderer.drawLightning(ctx, this.lightningEffects);
 
     // Floating damage numbers (world space)
     combat.draw(ctx);
