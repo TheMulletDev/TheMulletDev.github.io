@@ -6,7 +6,8 @@ import { Renderer } from '../systems/Renderer.js';
 import { Player }   from '../entities/Player.js';
 import { Enemy }    from '../entities/Enemy.js';
 import { Drop }     from '../entities/Drop.js';
-import { LEVEL1 }   from '../../assets/maps/level1.js';
+import { LEVEL1 }     from '../../assets/maps/level1.js';
+import { CHANGELOG }  from '../../assets/changelog.js';
 
 export class GameScene {
   constructor(canvas, input) {
@@ -33,6 +34,69 @@ export class GameScene {
 
     // Respawn timer
     this._deadTimer = 0;
+
+    // Changelog overlay state
+    this._changelogOpen   = false;
+    this._changelogScroll = 0;
+
+    // Click — toggle changelog or close it
+    this._handleClick = (e) => {
+      const r   = canvas.el.getBoundingClientRect();
+      const scaleX = canvas.width  / r.width;
+      const scaleY = canvas.height / r.height;
+      const mx  = (e.clientX - r.left) * scaleX;
+      const my  = (e.clientY - r.top)  * scaleY;
+      this._hitTestChangelog(mx, my);
+    };
+    canvas.el.addEventListener('click', this._handleClick);
+
+    // Touch — same, using first changed touch
+    this._handleTouch = (e) => {
+      const r     = canvas.el.getBoundingClientRect();
+      const scaleX = canvas.width  / r.width;
+      const scaleY = canvas.height / r.height;
+      const t     = e.changedTouches[0];
+      const mx    = (t.clientX - r.left) * scaleX;
+      const my    = (t.clientY - r.top)  * scaleY;
+      this._hitTestChangelog(mx, my);
+    };
+    canvas.el.addEventListener('touchend', this._handleTouch, { passive: true });
+
+    // Scroll wheel — scroll the overlay content
+    this._handleWheel = (e) => {
+      if (!this._changelogOpen) return;
+      this._changelogScroll = Math.max(0, this._changelogScroll + e.deltaY * 0.4);
+    };
+    canvas.el.addEventListener('wheel', this._handleWheel, { passive: true });
+  }
+
+  /** Button / overlay hit-testing used by both click and touch handlers. */
+  _hitTestChangelog(mx, my) {
+    const { canvas, renderer } = this;
+    const btnRect = renderer.changelogButtonRect(canvas.width, canvas.height);
+
+    if (!this._changelogOpen) {
+      if (mx >= btnRect.x && mx <= btnRect.x + btnRect.w &&
+          my >= btnRect.y && my <= btnRect.y + btnRect.h) {
+        this._changelogOpen   = true;
+        this._changelogScroll = 0;
+      }
+      return;
+    }
+
+    // While open: check if click lands on the close [X] or outside the panel
+    const panel = renderer.changelogPanelRect(canvas.width, canvas.height);
+    const xBtnX = panel.x + panel.w - 36;
+    const xBtnY = panel.y + 8;
+    const xBtnS = 24;
+    if (mx >= xBtnX && mx <= xBtnX + xBtnS && my >= xBtnY && my <= xBtnY + xBtnS) {
+      this._changelogOpen = false;
+      return;
+    }
+    // Click outside panel closes it
+    if (mx < panel.x || mx > panel.x + panel.w || my < panel.y || my > panel.y + panel.h) {
+      this._changelogOpen = false;
+    }
   }
 
   update(dt) {
@@ -154,6 +218,10 @@ export class GameScene {
     // HUD (screen space)
     renderer.drawHUD(ctx, player, canvas.width, canvas.height);
     renderer.drawMobileControls(ctx, canvas.width, canvas.height);
+    renderer.drawChangelogButton(ctx, canvas.width, canvas.height, this._changelogOpen);
+    if (this._changelogOpen) {
+      renderer.drawChangelogOverlay(ctx, canvas.width, canvas.height, CHANGELOG, this._changelogScroll);
+    }
 
     // Death overlay
     if (player.dead) {

@@ -1,0 +1,54 @@
+/**
+ * CHANGELOG
+ *
+ * Add new entries at the TOP of the array so the latest is always shown first.
+ * Each entry: { version, date, changes: string[] }
+ */
+export const CHANGELOG = [
+  {
+    version: '0.4',
+    date: '2026-03-20',
+    changes: [
+      'Changelog button — see what\'s new at any time',
+      'Level-up firework celebration: 5 staggered colour bursts',
+      'Henesys-style world decorations on every floor: hay bales,',
+      '  barrels, signposts, toadstools, stumps, crates, fences,',
+      '  flower clusters, and glowing lanterns',
+      'Double jump — press jump again mid-air for a shorter hop',
+    ],
+  },
+  {
+    version: '0.3',
+    date: '2026-03-20',
+    changes: [
+      'Two enemy types: Slimes and Mushrooms with patrol/chase AI',
+      'Weapon drops: Iron Sword (+20 dmg) and Magic Wand (+45 dmg)',
+      'Weapon-coloured attack arcs and particles',
+      'Potion drops — heal 60 HP, hold up to 5 (press E)',
+      'Coin drops with gold tracking',
+      'Floating damage numbers on hit',
+    ],
+  },
+  {
+    version: '0.2',
+    date: '2026-03-20',
+    changes: [
+      'Parallax background: sky, clouds, mountains, hills, trees',
+      'Henesys-themed sakura + green trees in background',
+      'Enemy respawn system (5 second cooldown)',
+      'Death screen with 2-second auto-respawn',
+      'Mobile on-screen touch controls',
+    ],
+  },
+  {
+    version: '0.1',
+    date: '2026-03-20',
+    changes: [
+      'Initial game — 8-floor tower platformer',
+      'Player movement with coyote time and jump buffer',
+      'Melee attack with sweeping arc effect',
+      'HP, EXP, and level-up system',
+      'Procedural pixel-art sprites — no external assets',
+    ],
+  },
+];

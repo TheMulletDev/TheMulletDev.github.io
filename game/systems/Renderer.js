@@ -220,6 +220,158 @@ export class Renderer {
     ctx.fillText(player.weapon?.name ?? 'Fists', pad + 11, wepY);
   }
 
+  // ── Changelog helpers (used for both drawing and hit-testing) ──────────────
+
+  changelogButtonRect(canvasW, canvasH) {
+    const w = 112, h = 28, pad = 14;
+    return { x: canvasW - w - pad, y: pad, w, h };
+  }
+
+  changelogPanelRect(canvasW, canvasH) {
+    const w = Math.min(500, canvasW - 40);
+    const h = Math.min(canvasH - 80, 540);
+    return { x: (canvasW - w) / 2, y: (canvasH - h) / 2, w, h };
+  }
+
+  drawChangelogButton(ctx, canvasW, canvasH, isOpen) {
+    const { x, y, w, h } = this.changelogButtonRect(canvasW, canvasH);
+    ctx.save();
+    ctx.globalAlpha = 0.92;
+
+    // Background
+    ctx.fillStyle = isOpen ? '#c89a30' : '#1a1a2e';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 6);
+    ctx.fill();
+
+    // Border
+    ctx.strokeStyle = '#c89a30';
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 6);
+    ctx.stroke();
+
+    // Label
+    ctx.globalAlpha = 1;
+    ctx.fillStyle   = isOpen ? '#1a1a2e' : '#c89a30';
+    ctx.font        = 'bold 11px monospace';
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('📋  CHANGELOG', x + w / 2, y + h / 2);
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
+
+  drawChangelogOverlay(ctx, canvasW, canvasH, changelog, scrollY) {
+    const { x: px, y: py, w: pw, h: ph } = this.changelogPanelRect(canvasW, canvasH);
+    const pad     = 18;
+    const bodyY   = py + 48;         // below title bar
+    const bodyH   = ph - 48 - 12;   // content height
+
+    ctx.save();
+
+    // Dim backdrop
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    // Panel background
+    ctx.fillStyle = '#0d0d1e';
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, ph, 10);
+    ctx.fill();
+
+    // Panel border
+    ctx.strokeStyle = '#c89a30';
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, ph, 10);
+    ctx.stroke();
+
+    // Title bar stripe
+    ctx.fillStyle = '#1a1a3a';
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, 42, [10, 10, 0, 0]);
+    ctx.fill();
+
+    // Title text
+    ctx.fillStyle   = '#c89a30';
+    ctx.font        = 'bold 15px monospace';
+    ctx.textAlign   = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('📋  CHANGELOG', px + pad, py + 21);
+    ctx.textBaseline = 'alphabetic';
+
+    // Close [X] button
+    const xBtnX = px + pw - 36;
+    const xBtnY = py + 8;
+    ctx.fillStyle = '#333355';
+    ctx.beginPath();
+    ctx.roundRect(xBtnX, xBtnY, 24, 24, 5);
+    ctx.fill();
+    ctx.fillStyle   = '#aaa';
+    ctx.font        = 'bold 13px monospace';
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✕', xBtnX + 12, xBtnY + 12);
+    ctx.textBaseline = 'alphabetic';
+
+    // Clip content region
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px, bodyY, pw, bodyH);
+    ctx.clip();
+
+    // Render entries
+    const LINE_H   = 19;
+    const VER_H    = 34;
+    let   cursor   = bodyY + pad - scrollY;
+
+    for (const section of changelog) {
+      // Version header
+      ctx.fillStyle = '#1e1e3a';
+      ctx.fillRect(px + pad, cursor, pw - pad * 2, VER_H);
+      ctx.strokeStyle = '#c89a30';
+      ctx.lineWidth   = 1;
+      ctx.strokeRect(px + pad, cursor, pw - pad * 2, VER_H);
+
+      ctx.fillStyle   = '#c89a30';
+      ctx.font        = 'bold 13px monospace';
+      ctx.textAlign   = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(`v${section.version}`, px + pad + 10, cursor + VER_H / 2);
+      ctx.fillStyle   = '#888';
+      ctx.font        = '11px monospace';
+      ctx.textAlign   = 'right';
+      ctx.fillText(section.date, px + pw - pad - 10, cursor + VER_H / 2);
+      ctx.textBaseline = 'alphabetic';
+      cursor += VER_H + 6;
+
+      // Change lines
+      for (const line of section.changes) {
+        ctx.fillStyle = line.startsWith('  ') ? '#888' : '#dde';
+        ctx.font      = '12px monospace';
+        ctx.textAlign = 'left';
+        const prefix  = line.startsWith('  ') ? '' : '• ';
+        ctx.fillText(prefix + line.trimStart(), px + pad + 12, cursor + LINE_H * 0.75);
+        cursor += LINE_H;
+      }
+      cursor += 14; // gap between versions
+    }
+
+    ctx.restore(); // remove clip
+
+    // Scroll hint if content overflows
+    const contentH = cursor - (bodyY + pad - scrollY) + scrollY;
+    if (contentH > bodyH + 10) {
+      ctx.fillStyle = 'rgba(200,154,48,0.6)';
+      ctx.font      = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('▼ scroll for more', px + pw / 2, py + ph - 8);
+    }
+
+    ctx.restore();
+  }
+
   drawMobileControls(ctx, canvasW, canvasH) {
     const btnW   = canvasW * 0.16;
     const btnH   = canvasH * 0.16;
