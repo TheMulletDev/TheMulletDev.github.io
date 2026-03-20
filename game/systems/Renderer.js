@@ -1223,48 +1223,106 @@ function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa', cl
     ctx.lineCap = 'round';
 
     if (cls === 'warrior') {
-      // ── Big red sword slash ─────────────────────────────────────────────────
-      const arcCx = 9 * S + 4;
+      // ── Sword swing with red energy trail ──────────────────────────────────
+      const arcCx = 9 * S + 4;  // pivot near the player's hand
       const arcCy = 4 * S;
       const startAngle = -1.6 + t * 0.4;
       const endAngle   = startAngle + 1.2 + t * 1.2;
+      const swordAngle = endAngle - 0.1;  // sword leads the arc slightly
 
-      // Wide energy ring (outermost, very transparent)
-      ctx.globalAlpha = 0.22 * pulse;
+      // Energy trail (background glow — arc is now secondary to the sword)
+      ctx.globalAlpha = 0.14 * pulse;
       ctx.strokeStyle = weaponColor;
-      ctx.lineWidth   = 26;
+      ctx.lineWidth   = 22;
       ctx.shadowColor = weaponColor;
-      ctx.shadowBlur  = 36;
-      ctx.beginPath(); ctx.arc(arcCx, arcCy, 62, startAngle, endAngle); ctx.stroke();
+      ctx.shadowBlur  = 28;
+      ctx.beginPath(); ctx.arc(arcCx, arcCy, 50, startAngle, endAngle); ctx.stroke();
 
-      // Main outer glow
-      ctx.globalAlpha = 0.55 + 0.35 * pulse;
-      ctx.lineWidth   = 18;
-      ctx.shadowBlur  = 24 + 10 * pulse;
-      ctx.beginPath(); ctx.arc(arcCx, arcCy, 52, startAngle, endAngle); ctx.stroke();
+      ctx.globalAlpha = 0.32 + 0.18 * pulse;
+      ctx.lineWidth   = 10;
+      ctx.shadowBlur  = 16;
+      ctx.beginPath(); ctx.arc(arcCx, arcCy, 42, startAngle, endAngle); ctx.stroke();
 
-      // Mid arc
-      ctx.globalAlpha = 0.7 + 0.25 * pulse;
-      ctx.lineWidth   = 8;
-      ctx.shadowBlur  = 12;
-      ctx.beginPath(); ctx.arc(arcCx, arcCy, 44, startAngle + 0.08, endAngle - 0.05); ctx.stroke();
-
-      // Bright white core
-      ctx.globalAlpha = 0.85 * pulse;
-      ctx.strokeStyle = '#ffffff';
+      ctx.globalAlpha = 0.45 * pulse;
+      ctx.strokeStyle = '#ffaaaa';
       ctx.lineWidth   = 3;
-      ctx.shadowColor = '#fff';
-      ctx.shadowBlur  = 8;
-      ctx.beginPath(); ctx.arc(arcCx, arcCy, 36, startAngle + 0.15, endAngle - 0.1); ctx.stroke();
+      ctx.shadowBlur  = 6;
+      ctx.beginPath(); ctx.arc(arcCx, arcCy, 36, startAngle + 0.12, endAngle - 0.05); ctx.stroke();
 
-      // Leading-edge spark
-      if (t > 0.05 && t < 0.92) {
-        const tipX = arcCx + Math.cos(endAngle) * 50;
-        const tipY = arcCy + Math.sin(endAngle) * 50;
-        ctx.fillStyle   = 'rgba(255,255,255,0.95)';
+      // ── Sword (drawn on top of the trail) ──────────────────────────────────
+      // Fade in quickly, stay visible, barely fade at very end
+      const swordAlpha = Math.min(1, t * 8) * Math.min(1, (1 - t) * 10 + 0.15);
+      ctx.globalAlpha = swordAlpha;
+      ctx.save();
+      ctx.translate(arcCx, arcCy);
+      ctx.rotate(swordAngle);
+
+      // Grip (brown leather with wrap detail)
+      ctx.shadowBlur  = 0;
+      ctx.fillStyle   = '#7c3d12';
+      ctx.fillRect(-18, -3, 14, 6);
+      ctx.fillStyle = '#5c2508';
+      ctx.fillRect(-15, -3, 2, 6);
+      ctx.fillRect(-11, -3, 2, 6);
+      ctx.fillRect(-7,  -3, 2, 6);
+
+      // Pommel
+      ctx.fillStyle   = '#b45309';
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur  = 5;
+      ctx.beginPath(); ctx.arc(-19, 0, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath(); ctx.arc(-19, 0, 3, 0, Math.PI * 2); ctx.fill();
+
+      // Crossguard
+      ctx.fillStyle   = '#b45309';
+      ctx.shadowColor = '#fbbf24';
+      ctx.shadowBlur  = 3;
+      ctx.fillRect(-3, -10, 8, 20);
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(-2, -10, 6,  4);
+      ctx.fillRect(-2,   6, 6,  4);
+
+      // Blade body (tapered trapezoid)
+      ctx.fillStyle   = '#c8cdd8';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur  = 10;
+      ctx.beginPath();
+      ctx.moveTo( 5, -5);
+      ctx.lineTo( 5,  5);
+      ctx.lineTo(52,  1.5);
+      ctx.lineTo(52, -1.5);
+      ctx.closePath();
+      ctx.fill();
+
+      // Fuller (groove down the centre)
+      ctx.fillStyle = '#6878a0';
+      ctx.shadowBlur = 0;
+      ctx.fillRect(7, -1, 42, 2);
+
+      // Edge highlight (top gleam)
+      ctx.fillStyle   = '#eef2ff';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur  = 8;
+      ctx.beginPath();
+      ctx.moveTo( 5, -5);
+      ctx.lineTo(52, -1.5);
+      ctx.lineTo(52,  0);
+      ctx.lineTo( 5, -2);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();  // end sword transform
+
+      // Tip spark at sword point
+      if (t > 0.05 && t < 0.94) {
+        const tipX = arcCx + Math.cos(swordAngle) * 52;
+        const tipY = arcCy + Math.sin(swordAngle) * 52;
+        ctx.globalAlpha = swordAlpha * 0.9;
+        ctx.fillStyle   = '#ffffff';
         ctx.shadowColor = weaponColor;
         ctx.shadowBlur  = 18;
-        ctx.beginPath(); ctx.arc(tipX, tipY, 5 + 3 * (1 - t), 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(tipX, tipY, 4 + 2 * (1 - t), 0, Math.PI * 2); ctx.fill();
       }
 
     } else if (cls === 'mage') {
