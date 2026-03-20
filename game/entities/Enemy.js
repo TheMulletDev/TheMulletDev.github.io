@@ -13,6 +13,20 @@ const STATS = {
   mushroom: { hp: 80, maxHp: 80,  dmg: 20, exp: 30 },
 };
 
+// Loot tables — each entry rolls independently.
+// weapon drops use weaponId matching the WEAPONS map in Player.js.
+const DROP_TABLES = {
+  slime: [
+    { type: 'coin',   chance: 0.90, valueMin: 1, valueMax: 3 },
+    { type: 'potion', chance: 0.10 },
+  ],
+  mushroom: [
+    { type: 'coin',   chance: 1.00, valueMin: 4, valueMax: 8 },
+    { type: 'potion', chance: 0.20 },
+    { type: 'weapon', chance: 0.06, weaponId: 'iron_sword' },
+  ],
+};
+
 export class Enemy extends Entity {
   constructor(x, y, type = 'slime') {
     const sizes = { slime: [32, 28], mushroom: [34, 42] };
@@ -30,7 +44,8 @@ export class Enemy extends Entity {
     this.hurtTimer  = 0;
     this.deathTimer = 0;
     this.respawnTimer = 0;
-    this.spawnFlash = 0;  // counts down after respawning for a flash effect
+    this.spawnFlash   = 0;  // counts down after respawning for a flash effect
+    this.pendingDrops = []; // filled on death, drained by GameScene
 
     Object.assign(this, STATS[type] || STATS.slime);
   }
@@ -83,10 +98,26 @@ export class Enemy extends Entity {
     this.hurtTimer = 0.15;
     this.vx = -this.facing * KNOCKBACK;
     if (this.hp <= 0) {
-      this.dead        = true;
-      this.deathTimer  = DEATH_DURATION;
+      this.dead         = true;
+      this.deathTimer   = DEATH_DURATION;
       this.respawnTimer = DEATH_DURATION + RESPAWN_DELAY;
-      this.vx = 0;
+      this.vx           = 0;
+      this._rollDrops();
+    }
+  }
+
+  _rollDrops() {
+    this.pendingDrops = [];
+    const cx = this.x + this.w / 2;
+    const cy = this.y + this.h / 2;
+    for (const entry of (DROP_TABLES[this.type] ?? [])) {
+      if (Math.random() >= entry.chance) continue;
+      const drop = { type: entry.type, x: cx, y: cy };
+      if (entry.type === 'coin') {
+        drop.value = entry.valueMin + Math.floor(Math.random() * (entry.valueMax - entry.valueMin + 1));
+      }
+      if (entry.weaponId) drop.weaponId = entry.weaponId;
+      this.pendingDrops.push(drop);
     }
   }
 
@@ -105,7 +136,8 @@ export class Enemy extends Entity {
     this.dir    = 1;
     this.facing = 1;
     this.startX = this.spawnX;
-    this.spawnFlash = 0.5;  // triggers a brief flash in the renderer
+    this.spawnFlash   = 0.5;  // triggers a brief flash in the renderer
+    this.pendingDrops = [];
   }
 
   /** Returns contact hitbox for touching the player */

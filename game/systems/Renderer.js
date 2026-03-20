@@ -41,18 +41,26 @@ export class Renderer {
   }
 
   drawPlayer(ctx, player) {
-    const { x, y, w, h, facing, state, invincible, attackTimer } = player;
+    const { x, y, w, h, facing, state, invincible, attackTimer, weapon } = player;
 
     const now = Date.now();
     const dt  = Math.min((now - this._lastTime) / 1000, 0.05);
     this._lastTime = now;
+
+    // Weapon-aware colours for arc and particles
+    const weaponColor = weapon?.color ?? '#a78bfa';
+    const PARTICLE_PALETTES = {
+      iron_sword: ['#e8c84a', '#ffd700', '#fff9a0', '#fbbf24', '#ffffff'],
+      magic_wand:  ['#c084fc', '#e879f9', '#818cf8', '#a5f3fc', '#ffffff'],
+    };
+    const particleColors = PARTICLE_PALETTES[weapon?.id] ?? ['#a78bfa', '#c4b5fd', '#7dd3fc', '#f0abfc', '#ffffff', '#818cf8'];
 
     // ── Spawn magic particles on attack start ────────────────────────────────
     const isAttacking = state === 'attack';
     if (isAttacking && !this._wasAttacking) {
       const cx = x + (facing === 1 ? w + 10 : -10);
       const cy = y + h * 0.35;
-      const COLORS = ['#a78bfa', '#c4b5fd', '#7dd3fc', '#f0abfc', '#ffffff', '#818cf8'];
+      const COLORS = particleColors;
       for (let i = 0; i < 16; i++) {
         const baseAngle = facing === 1 ? 0 : Math.PI;
         const angle     = baseAngle + (Math.random() - 0.5) * 2.2;
@@ -99,7 +107,7 @@ export class Renderer {
     ctx.translate(-w / 2, -h);
 
     const frame = state === 'walk' ? Math.floor(now / 110) % 4 : 0;
-    _player(ctx, state, frame, attackTimer);
+    _player(ctx, state, frame, attackTimer, weaponColor);
 
     ctx.restore();
   }
@@ -172,6 +180,40 @@ export class Renderer {
     ctx.fillStyle = '#ff4';
     ctx.textAlign = 'left';
     ctx.fillText(`LV ${player.level}`, pad, expY + expH + 14);
+
+    // ── Gold & Potions row ───────────────────────────────────────────────────
+    const lootY = expY + expH + 30;
+    ctx.font = '11px monospace';
+
+    // Coin icon
+    ctx.fillStyle = '#ffd700';
+    ctx.shadowColor = '#ffd700';
+    ctx.shadowBlur = 4;
+    ctx.fillRect(pad, lootY - 8, 8, 8);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText(`${player.gold}g`, pad + 11, lootY);
+
+    // Potion icon
+    const potX = pad + 56;
+    ctx.fillStyle = '#f0abfc';
+    ctx.shadowColor = '#f0abfc';
+    ctx.shadowBlur = 4;
+    ctx.fillRect(potX, lootY - 8, 8, 8);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = player.potions > 0 ? '#f0abfc' : '#555';
+    ctx.fillText(`${player.potions}/${player.maxPotions}`, potX + 11, lootY);
+
+    // ── Weapon row ───────────────────────────────────────────────────────────
+    const wepY = lootY + 14;
+    const wepColor = player.weapon?.color ?? '#555';
+    ctx.fillStyle = wepColor;
+    ctx.shadowColor = wepColor;
+    ctx.shadowBlur = player.weapon ? 4 : 0;
+    ctx.fillRect(pad, wepY - 8, 8, 8);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = player.weapon ? '#ddd' : '#555';
+    ctx.fillText(player.weapon?.name ?? 'Fists', pad + 11, wepY);
   }
 
   drawMobileControls(ctx, canvasW, canvasH) {
@@ -184,6 +226,7 @@ export class Renderer {
 
     const btnSize = Math.min(canvasW, canvasH) * 0.14;
     const rpad    = canvasH * 0.04;
+    const potionX = canvasW - btnSize * 3 - rpad * 3;
     const jumpX   = canvasW - btnSize * 2 - rpad * 2;
     const attackX = canvasW - btnSize - rpad;
     const rbtnY   = canvasH - btnSize - rpad;
@@ -191,9 +234,63 @@ export class Renderer {
     ctx.globalAlpha = 0.35;
     _drawBtn(ctx, leftX,   btnY,   btnW,    btnH,    '◀');
     _drawBtn(ctx, rightX,  btnY,   btnW,    btnH,    '▶');
+    _drawBtn(ctx, potionX, rbtnY,  btnSize, btnSize, 'P', '#f0abfc');
     _drawBtn(ctx, jumpX,   rbtnY,  btnSize, btnSize, '↑', '#4af');
     _drawBtn(ctx, attackX, rbtnY,  btnSize, btnSize, 'A', '#fa4');
     ctx.globalAlpha = 1;
+  }
+
+  drawDrops(ctx, drops) {
+    for (const d of drops) {
+      const bob = Math.sin(d.bobTimer) * 3;
+      ctx.save();
+
+      if (d.type === 'coin') {
+        // Pulsing gold square with glow
+        const pulse = 0.7 + 0.3 * Math.sin(d.bobTimer * 1.5);
+        ctx.shadowColor = '#ffd700';
+        ctx.shadowBlur  = 8 * pulse;
+        ctx.fillStyle   = '#ffd700';
+        ctx.fillRect(d.x, d.y - bob, d.w, d.h);
+        // Shine pixel
+        ctx.shadowBlur  = 0;
+        ctx.fillStyle   = 'rgba(255,255,255,0.7)';
+        ctx.fillRect(d.x + 2, d.y - bob + 2, 3, 3);
+
+      } else if (d.type === 'potion') {
+        // Pink flask: neck + body
+        ctx.shadowColor = '#f0abfc';
+        ctx.shadowBlur  = 8;
+        // Body
+        ctx.fillStyle = '#d946ef';
+        ctx.fillRect(d.x + 2, d.y + 4 - bob, d.w - 4, d.h - 4);
+        // Neck
+        ctx.fillStyle = '#a21caf';
+        ctx.fillRect(d.x + 4, d.y - bob, d.w - 8, 5);
+        // Liquid shine
+        ctx.shadowBlur = 0;
+        ctx.fillStyle  = 'rgba(255,255,255,0.5)';
+        ctx.fillRect(d.x + 3, d.y + 5 - bob, 2, 4);
+
+      } else if (d.type === 'weapon') {
+        // Small sword at 45° with crossguard
+        ctx.shadowColor = '#e8c84a';
+        ctx.shadowBlur  = 10;
+        ctx.translate(d.x + d.w / 2, d.y + d.h / 2 - bob);
+        ctx.rotate(Math.PI / 4);
+        // Blade
+        ctx.fillStyle = '#e8e8f0';
+        ctx.fillRect(-2, -10, 4, 16);
+        // Crossguard
+        ctx.fillStyle = '#e8c84a';
+        ctx.fillRect(-7, 2, 14, 3);
+        // Grip
+        ctx.fillStyle = '#92400e';
+        ctx.fillRect(-1, 5, 3, 6);
+      }
+
+      ctx.restore();
+    }
   }
 }
 
@@ -203,7 +300,7 @@ export class Renderer {
 //   Left side (cols 0–1) = back of head  →  mullet lives here.
 //   Right side (col 6–7) = front / face direction.
 // ═════════════════════════════════════════════════════════════════════════════
-function _player(ctx, state, frame, attackTimer = 0) {
+function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa') {
 
   // ── Mullet (back of head, long hanging strand) ────────────────────────────
   ctx.fillStyle = C.hairD;
@@ -301,25 +398,27 @@ function _player(ctx, state, frame, attackTimer = 0) {
     ctx.save();
     ctx.lineCap = 'round';
 
-    // Outer glow arc
-    ctx.strokeStyle = `rgba(167,139,250,${(0.45 + 0.45 * pulse).toFixed(2)})`;
+    // Outer glow arc — colour driven by equipped weapon
+    ctx.globalAlpha = 0.45 + 0.45 * pulse;
+    ctx.strokeStyle = weaponColor;
     ctx.lineWidth   = 11;
-    ctx.shadowColor = '#a78bfa';
+    ctx.shadowColor = weaponColor;
     ctx.shadowBlur  = 20 + 8 * pulse;
     ctx.beginPath();
     ctx.arc(arcCx, arcCy, 38, startAngle, endAngle);
     ctx.stroke();
 
     // Mid arc
-    ctx.strokeStyle = `rgba(196,181,253,${(0.65 + 0.3 * pulse).toFixed(2)})`;
+    ctx.globalAlpha = 0.65 + 0.3 * pulse;
     ctx.lineWidth   = 5;
     ctx.shadowBlur  = 10;
     ctx.beginPath();
     ctx.arc(arcCx, arcCy, 31, startAngle + 0.08, endAngle - 0.05);
     ctx.stroke();
 
-    // Bright core
-    ctx.strokeStyle = `rgba(255,255,255,${(0.75 * pulse).toFixed(2)})`;
+    // Bright white core (always white)
+    ctx.globalAlpha = 0.75 * pulse;
+    ctx.strokeStyle = '#ffffff';
     ctx.lineWidth   = 2;
     ctx.shadowColor = '#fff';
     ctx.shadowBlur  = 6;

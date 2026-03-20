@@ -1,7 +1,7 @@
 export class Input {
   constructor(canvas) {
     this.keys = {};
-    this.virtual = { left: false, right: false, jump: false, attack: false };
+    this.virtual = { left: false, right: false, jump: false, attack: false, usePotion: false };
     this._touches = new Map();
 
     // Keyboard
@@ -34,10 +34,11 @@ export class Input {
   }
 
   _evalVirtual() {
-    this.virtual.left   = false;
-    this.virtual.right  = false;
-    this.virtual.jump   = false;
-    this.virtual.attack = false;
+    this.virtual.left      = false;
+    this.virtual.right     = false;
+    this.virtual.jump      = false;
+    this.virtual.attack    = false;
+    this.virtual.usePotion = false;
 
     const w = this._canvas.width;
     const h = this._canvas.height;
@@ -57,12 +58,14 @@ export class Input {
         // Right half = action buttons
         const btnSize = Math.min(w, h) * 0.14;
         const pad = h * 0.04;
+        const potionX = w - btnSize * 3 - pad * 3;
         const jumpX   = w - btnSize * 2 - pad * 2;
         const attackX = w - btnSize - pad;
         const btnY    = h - btnSize - pad;
 
-        if (x > jumpX   && x < jumpX   + btnSize && y > btnY && y < btnY + btnSize) this.virtual.jump   = true;
-        if (x > attackX && x < attackX + btnSize && y > btnY && y < btnY + btnSize) this.virtual.attack = true;
+        if (x > potionX && x < potionX + btnSize && y > btnY && y < btnY + btnSize) this.virtual.usePotion = true;
+        if (x > jumpX   && x < jumpX   + btnSize && y > btnY && y < btnY + btnSize) this.virtual.jump      = true;
+        if (x > attackX && x < attackX + btnSize && y > btnY && y < btnY + btnSize) this.virtual.attack    = true;
       }
     }
   }
@@ -70,7 +73,8 @@ export class Input {
   isLeft()   { return this.keys['ArrowLeft']  || this.keys['KeyA'] || this.virtual.left;   }
   isRight()  { return this.keys['ArrowRight'] || this.keys['KeyD'] || this.virtual.right;  }
   isJump()   { return this.keys['ArrowUp'] || this.keys['KeyW'] || this.keys['Space'] || this.virtual.jump;  }
-  isAttack() { return this.keys['KeyZ'] || this.keys['KeyF'] || this.virtual.attack; }
+  isAttack()    { return this.keys['KeyZ'] || this.keys['KeyF'] || this.virtual.attack; }
+  isUsePotion() { return this.keys['KeyE'] || this.virtual.usePotion; }
 
   /** Call once per frame after reading state — clears one-shot inputs */
   flush() {

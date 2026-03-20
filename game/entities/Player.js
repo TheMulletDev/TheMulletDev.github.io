@@ -1,5 +1,11 @@
 import { Entity } from './Entity.js';
 
+// Weapon definitions — id must match the weaponId used in Enemy drop tables.
+export const WEAPONS = {
+  iron_sword: { id: 'iron_sword', name: 'Iron Sword', dmgBonus: 20, color: '#e8c84a' },
+  magic_wand:  { id: 'magic_wand',  name: 'Magic Wand',  dmgBonus: 45, color: '#c084fc' },
+};
+
 const WALK_SPEED   = 220;
 const JUMP_FORCE   = -620;
 const ATTACK_DURATION = 0.25; // seconds
@@ -15,6 +21,15 @@ export class Player extends Entity {
     this.level = 1;
     this.expToNext = 100;
 
+    // Inventory / currency
+    this.gold       = 0;
+    this.potions    = 0;
+    this.maxPotions = 5;
+    this.weapon     = null; // equipped WEAPONS entry, or null = fists
+
+    // Pending UI events to be drained by GameScene each frame
+    this.pendingTexts = []; // [{ text, color }]
+
     // Attack state
     this.attacking     = false;
     this.attackTimer   = 0;
@@ -24,6 +39,9 @@ export class Player extends Entity {
     // Invincibility frames
     this.invincible    = false;
     this.invincibleTimer = 0;
+
+    // Potion use cooldown (prevents holding 'E' from draining all potions)
+    this._potionCooldown = 0;
 
     // Jump buffer (forgiving input)
     this.jumpBufferTimer = 0;
@@ -37,6 +55,7 @@ export class Player extends Entity {
     this.onGround = false; // reset; physics/tilemap will set it
 
     // Timers
+    if (this._potionCooldown > 0) this._potionCooldown -= dt;
     if (this.attackCooldown > 0)  this.attackCooldown  -= dt;
     if (this.attackTimer    > 0) {
       this.attackTimer -= dt;
@@ -72,6 +91,11 @@ export class Player extends Entity {
       this.vy = JUMP_FORCE;
       this.jumpBufferTimer = 0;
       this.coyoteTimer = 0;
+    }
+
+    // Potion use
+    if (input.isUsePotion() && this.potions > 0 && this.hp < this.maxHp && this._potionCooldown <= 0) {
+      this._usePotion();
     }
 
     // Attack
@@ -110,6 +134,40 @@ export class Player extends Entity {
     };
   }
 
+  /** Pick up a dropped item. Returns false if the item was rejected (e.g. potions full). */
+  pickupDrop(drop) {
+    if (drop.type === 'coin') {
+      this.gold += drop.value;
+      this.pendingTexts.push({ text: `+${drop.value}g`, color: '#ffd700' });
+      return true;
+    }
+    if (drop.type === 'potion') {
+      if (this.potions >= this.maxPotions) return false;
+      this.potions++;
+      this.pendingTexts.push({ text: '+Potion', color: '#f0abfc' });
+      return true;
+    }
+    if (drop.type === 'weapon') {
+      const w = WEAPONS[drop.weaponId];
+      if (!w) return false;
+      if (this.weapon) this.attackDamage -= this.weapon.dmgBonus; // unequip old
+      this.weapon = w;
+      this.attackDamage += w.dmgBonus;
+      this.pendingTexts.push({ text: w.name + '!', color: w.color });
+      return true;
+    }
+    return false;
+  }
+
+  _usePotion() {
+    if (this.potions <= 0) return;
+    const healed = Math.min(60, this.maxHp - this.hp);
+    this.hp = Math.min(this.maxHp, this.hp + 60);
+    this.potions--;
+    this._potionCooldown = 0.5;
+    if (healed > 0) this.pendingTexts.push({ text: `+${healed} HP`, color: '#4ade80' });
+  }
+
   takeDamage(amount) {
     if (this.invincible) return;
     this.hp = Math.max(0, this.hp - amount);
@@ -126,7 +184,7 @@ export class Player extends Entity {
       this.expToNext = Math.floor(this.expToNext * 1.4);
       this.maxHp += 20;
       this.hp = this.maxHp;
-      this.attackDamage += 5;
+      this.attackDamage += 5; // weapon bonus is already included in attackDamage
     }
   }
 }
