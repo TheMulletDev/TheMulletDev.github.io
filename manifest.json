@@ -4,7 +4,7 @@
   "description": "A retro platformer",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "landscape",
   "background_color": "#06061a",
   "theme_color": "#06061a",
   "icons": [
