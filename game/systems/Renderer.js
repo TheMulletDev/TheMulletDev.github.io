@@ -44,7 +44,7 @@ export class Renderer {
   }
 
   drawPlayer(ctx, player) {
-    const { x, y, w, h, facing, state, invincible, attackTimer, weapon } = player;
+    const { x, y, w, h, facing, state, invincible, attackTimer, weapon, playerClass } = player;
 
     const now = Date.now();
     const dt  = Math.min((now - this._lastTime) / 1000, 0.05);
@@ -111,7 +111,7 @@ export class Renderer {
     ctx.translate(-w / 2, -h);
 
     const frame = state === 'walk' ? Math.floor(now / 110) % 4 : 0;
-    _player(ctx, state, frame, attackTimer, weaponColor);
+    _player(ctx, state, frame, attackTimer, weaponColor, playerClass?.id ?? 'warrior');
 
     ctx.restore();
   }
@@ -502,6 +502,152 @@ export class Renderer {
     ctx.restore();
   }
 
+  // ── Class selection screen ────────────────────────────────────────────────
+
+  /** Returns bounding rects for each class card (for hit-testing). */
+  classSelectCardRects(canvasW, canvasH, count) {
+    const sidePad = canvasW * 0.03;
+    const gap     = canvasW * 0.015;
+    const cardW   = (canvasW - sidePad * 2 - gap * (count - 1)) / count;
+    const cardH   = canvasH * 0.70;
+    const cardY   = canvasH * 0.17;
+    return Array.from({ length: count }, (_, i) => ({
+      x: sidePad + i * (cardW + gap), y: cardY, w: cardW, h: cardH,
+    }));
+  }
+
+  /** Returns bounding rect for the PLAY button (for hit-testing). */
+  classSelectPlayBtn(canvasW, canvasH) {
+    const btnW = Math.min(180, canvasW * 0.22);
+    const btnH = Math.min(38, canvasH * 0.09);
+    return { x: (canvasW - btnW) / 2, y: canvasH * 0.90, w: btnW, h: btnH };
+  }
+
+  drawClassSelect(ctx, canvasW, canvasH, classes, selectedIdx) {
+    // Background gradient
+    const bg = ctx.createLinearGradient(0, 0, 0, canvasH);
+    bg.addColorStop(0, '#07011a');
+    bg.addColorStop(1, '#100830');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    // Stars
+    const t = Date.now() / 1800;
+    for (let i = 0; i < 70; i++) {
+      const sx      = ((i * 137 + 41) % (canvasW + 100)) - 50;
+      const sy      = ((i * 97  + 17) % (canvasH * 0.80));
+      const twinkle = 0.2 + 0.8 * Math.abs(Math.sin(t + i * 0.63));
+      ctx.globalAlpha = twinkle * 0.65;
+      ctx.fillStyle   = i % 5 === 0 ? '#c0d8ff' : '#ffffff';
+      ctx.fillRect(sx, sy, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? 2 : 1);
+    }
+    ctx.globalAlpha = 1;
+
+    // Title
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = `bold ${Math.max(14, Math.floor(canvasH * 0.055))}px monospace`;
+    ctx.shadowColor  = '#c89a30';
+    ctx.shadowBlur   = 12;
+    ctx.fillStyle    = '#c89a30';
+    ctx.fillText('SELECT YOUR CLASS', canvasW / 2, canvasH * 0.09);
+    ctx.shadowBlur   = 0;
+
+    // Cards
+    const sidePad = canvasW * 0.03;
+    const gap     = canvasW * 0.015;
+    const cardW   = (canvasW - sidePad * 2 - gap * 3) / 4;
+    const cardH   = canvasH * 0.70;
+    const cardY   = canvasH * 0.17;
+
+    for (let i = 0; i < classes.length; i++) {
+      const cls       = classes[i];
+      const cardX     = sidePad + i * (cardW + gap);
+      const isSel     = i === selectedIdx;
+
+      // Card fill
+      ctx.fillStyle = isSel ? '#1a1a3a' : '#0d0d1e';
+      ctx.beginPath();
+      ctx.roundRect(cardX, cardY, cardW, cardH, 7);
+      ctx.fill();
+
+      // Card border
+      ctx.strokeStyle = isSel ? cls.color : '#252545';
+      ctx.lineWidth   = isSel ? 2.5 : 1.5;
+      if (isSel) { ctx.shadowColor = cls.color; ctx.shadowBlur = 14; }
+      ctx.beginPath();
+      ctx.roundRect(cardX, cardY, cardW, cardH, 7);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Character preview — sprite is 36×52 at S=4;
+      // scale it to fill ~62% of card width, capped so it fits the preview area
+      const previewAreaH = cardH * 0.58;
+      const spriteW = 36, spriteH = 52;
+      const scale   = Math.min(cardW * 0.62 / spriteW, previewAreaH / spriteH);
+      const previewCX = cardX + cardW / 2;
+      const previewBY = cardY + previewAreaH;  // bottom edge of preview area
+
+      ctx.save();
+      ctx.translate(previewCX, previewBY);
+      ctx.scale(scale, scale);
+      ctx.translate(-spriteW / 2, -spriteH);
+      _player(ctx, 'idle', 0, 0, cls.color, cls.id);
+      ctx.restore();
+
+      // Class name
+      const nameY    = cardY + cardH * 0.62;
+      const nameSize = Math.max(8, Math.floor(cardW * 0.14));
+      ctx.fillStyle    = isSel ? cls.color : '#cccccc';
+      ctx.font         = `bold ${nameSize}px monospace`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      if (isSel) { ctx.shadowColor = cls.color; ctx.shadowBlur = 8; }
+      ctx.fillText(cls.name, cardX + cardW / 2, nameY);
+      ctx.shadowBlur = 0;
+
+      // Tagline
+      const tagSize = Math.max(7, Math.floor(cardW * 0.092));
+      ctx.fillStyle = '#888';
+      ctx.font      = `${tagSize}px monospace`;
+      ctx.fillText(cls.tagline, cardX + cardW / 2, nameY + cardH * 0.085);
+
+      // Stats
+      const statsY  = nameY + cardH * 0.175;
+      const statSz  = Math.max(7, Math.floor(cardW * 0.088));
+      ctx.font      = `${statSz}px monospace`;
+      ctx.fillStyle = '#f87171';
+      ctx.fillText(`HP  ${cls.stats.maxHp}`, cardX + cardW / 2, statsY);
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillText(`ATK ${cls.stats.attackDamage}`, cardX + cardW / 2, statsY + cardH * 0.085);
+    }
+
+    // PLAY button
+    const { x: bx, y: by, w: bw, h: bh } = this.classSelectPlayBtn(canvasW, canvasH);
+    const selCol = classes[selectedIdx].color;
+    ctx.fillStyle   = selCol;
+    ctx.shadowColor = selCol;
+    ctx.shadowBlur  = 14;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 8);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle    = '#000';
+    ctx.font         = `bold ${Math.max(11, Math.floor(bh * 0.38))}px monospace`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('▶  PLAY  ◀', canvasW / 2, by + bh / 2);
+
+    // Hint text
+    ctx.fillStyle    = '#44445a';
+    ctx.font         = `${Math.max(8, Math.floor(canvasH * 0.025))}px monospace`;
+    ctx.textBaseline = 'middle';
+    ctx.fillText('← → to browse   •   ENTER / tap card to confirm', canvasW / 2, canvasH * 0.965);
+
+    ctx.textBaseline = 'alphabetic';
+  }
+
   drawMobileControls(ctx, canvasW, canvasH) {
     const btnW   = canvasW * 0.16;
     const btnH   = canvasH * 0.16;
@@ -716,66 +862,201 @@ export class Renderer {
 //   Left side (cols 0–1) = back of head  →  mullet lives here.
 //   Right side (col 6–7) = front / face direction.
 // ═════════════════════════════════════════════════════════════════════════════
-function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa') {
+// ── Per-class body colour palettes ───────────────────────────────────────────
+const CLASS_BODY = {
+  warrior: {
+    shirtD: '#37474f', shirtM: '#546e7a', collar: '#ef4444', belt: '#b71c1c',
+    pantsD: '#1c2d36', pantsM: '#263238', bootD: '#1a0a00', bootM: '#2d1a0a',
+  },
+  mage: {
+    shirtD: '#1e3a8a', shirtM: '#2563eb', collar: '#818cf8', belt: '#7c3aed',
+    pantsD: '#1e3a8a', pantsM: '#2563eb', bootD: '#0c1442', bootM: '#1e3a8a',
+  },
+  thief: {
+    shirtD: '#0f172a', shirtM: '#1e293b', collar: '#4ade80', belt: '#14532d',
+    pantsD: '#0b1018', pantsM: '#0f172a', bootD: '#050810', bootM: '#0f172a',
+  },
+  bowman: {
+    shirtD: '#365314', shirtM: '#4d7c0f', collar: '#84cc16', belt: '#78350f',
+    pantsD: '#7c2d12', pantsM: '#9a3412', bootD: '#3f1407', bootM: '#6b2d0a',
+  },
+};
 
-  // ── Mullet (back of head, long hanging strand) ────────────────────────────
-  ctx.fillStyle = C.hairD;
-  p(ctx, 0, 1, 2, 2);   // dark base block
-  p(ctx, 0, 3, 1, 3);   // long dark strand
-  ctx.fillStyle = C.hairM;
-  p(ctx, 0, 0, 2, 2);   // upper mullet body
-  p(ctx, 1, 3, 1, 2);   // mid-strand highlight
-  ctx.fillStyle = C.hairL;
-  p(ctx, 0, 2, 1, 1);   // sheen fleck
+function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa', cls = 'warrior') {
+  const B = CLASS_BODY[cls] ?? CLASS_BODY.warrior;
 
-  // ── Hair on top (business in front) ──────────────────────────────────────
-  ctx.fillStyle = C.hairD;
-  p(ctx, 2, 0, 6, 1);
-  ctx.fillStyle = C.hairM;
-  p(ctx, 2, 0, 5, 1);
-  ctx.fillStyle = C.hairL;
-  p(ctx, 3, 0, 3, 1);   // top highlight
+  // ── Head (class-specific) ─────────────────────────────────────────────────
+  if (cls === 'warrior') {
+    // Steel helmet with red plume
+    ctx.fillStyle = '#37474f';
+    p(ctx, 0, 0, 8, 5);              // full helmet shell
+    ctx.fillStyle = '#546e7a';
+    p(ctx, 0, 0, 7, 4);              // lighter face panel
+    ctx.fillStyle = '#78909c';
+    p(ctx, 1, 0, 5, 2);              // steel sheen on top
+    ctx.fillStyle = '#263238';
+    p(ctx, 0, 4, 8, 1);              // visor rim (dark)
+    // Face slit (narrow visible area)
+    ctx.fillStyle = C.skin;
+    p(ctx, 2, 2, 4, 2);
+    ctx.fillStyle = C.skinD;
+    p(ctx, 2, 3, 4, 1);
+    ctx.fillStyle = C.eye;
+    p(ctx, 5, 2, 1, 1);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(5 * S + 2, 2 * S, 1, 1);
+    // Red plume above helmet
+    ctx.fillStyle = '#b91c1c';
+    p(ctx, 3, -2, 3, 3);
+    ctx.fillStyle = '#ef4444';
+    p(ctx, 3, -2, 2, 2);
+    ctx.fillStyle = '#fca5a5';
+    p(ctx, 3, -2, 1, 1);
 
-  // ── Face ──────────────────────────────────────────────────────────────────
-  ctx.fillStyle = C.skin;
-  p(ctx, 2, 1, 6, 3);   // face block
-  ctx.fillStyle = C.skinD;
-  p(ctx, 2, 4, 6, 1);   // chin shadow
+  } else if (cls === 'mage') {
+    // Pointed wizard hat (cone above sprite, brim at row 1)
+    ctx.fillStyle = '#1e3a8a';
+    // Hat cone — triangle path
+    ctx.beginPath();
+    ctx.moveTo(4.5 * S, -5 * S);   // tip
+    ctx.lineTo(0,        2 * S);    // left base
+    ctx.lineTo(9 * S,    2 * S);    // right base
+    ctx.closePath();
+    ctx.fill();
+    // Cone highlight
+    ctx.fillStyle = '#2563eb';
+    ctx.beginPath();
+    ctx.moveTo(4.5 * S, -5 * S);
+    ctx.lineTo(0,        2 * S);
+    ctx.lineTo(4.5 * S,  2 * S);
+    ctx.closePath();
+    ctx.fill();
+    // Hat brim (wide)
+    ctx.fillStyle = '#1e3a8a';
+    p(ctx, 0, 1, 8, 1);
+    ctx.fillStyle = '#2563eb';
+    p(ctx, 0, 1, 7, 1);
+    // Gold star on hat
+    ctx.fillStyle = '#fbbf24';
+    ctx.fillRect(4 * S, -3 * S, S, S);
+    // Face
+    ctx.fillStyle = C.skin;
+    p(ctx, 2, 2, 5, 2);
+    ctx.fillStyle = C.skinD;
+    p(ctx, 2, 4, 5, 1);
+    ctx.fillStyle = C.eye;
+    p(ctx, 6, 2, 1, 1);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(6 * S + 2, 2 * S, 1, 1);
 
-  // Eye — col 6 is near the front (right) when facing right
-  ctx.fillStyle = C.eye;
-  p(ctx, 6, 2, 1, 1);
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(6 * S + 2, 2 * S, 1, 1);  // tiny pupil glint
+  } else if (cls === 'thief') {
+    // Dark green hood + narrow face slit
+    ctx.fillStyle = '#052e16';
+    p(ctx, 0, 0, 8, 5);              // outer hood
+    ctx.fillStyle = '#14532d';
+    p(ctx, 0, 0, 7, 4);              // inner hood highlight
+    ctx.fillStyle = '#166534';
+    p(ctx, 1, 0, 4, 2);              // sheen
+    // Narrow face slit
+    ctx.fillStyle = C.skin;
+    p(ctx, 4, 2, 3, 1);
+    // Piercing single eye
+    ctx.fillStyle = C.eye;
+    p(ctx, 6, 2, 1, 1);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(6 * S + 2, 2 * S, 1, 1);
+    // Shadow under brow
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    p(ctx, 0, 3, 4, 2);
+
+  } else if (cls === 'bowman') {
+    // Short hair peek (before hat hides it)
+    ctx.fillStyle = '#7c3d12';
+    p(ctx, 0, 2, 1, 2);             // tiny brown hair behind
+    // Hat crown (brown)
+    ctx.fillStyle = '#7c3d12';
+    p(ctx, 1, 0, 6, 3);
+    ctx.fillStyle = '#92400e';
+    p(ctx, 1, 0, 5, 2);
+    ctx.fillStyle = '#b45309';
+    p(ctx, 2, 0, 3, 1);             // top highlight
+    // Hat band
+    ctx.fillStyle = '#3f1407';
+    p(ctx, 1, 2, 6, 1);
+    // Wide brim (extends beyond sprite edges)
+    ctx.fillStyle = '#6b2d0a';
+    ctx.fillRect(-S, 3 * S, 11 * S, S);
+    ctx.fillStyle = '#78350f';
+    ctx.fillRect(0, 3 * S, 9 * S, Math.ceil(S * 0.5));
+    // Green feather in hat
+    ctx.fillStyle = '#365314';
+    p(ctx, 6, 0, 1, 2);
+    ctx.fillStyle = '#4d7c0f';
+    p(ctx, 6, 0, 1, 1);
+    // Face (same as default)
+    ctx.fillStyle = C.skin;
+    p(ctx, 2, 1, 5, 3);
+    ctx.fillStyle = C.skinD;
+    p(ctx, 2, 4, 5, 1);
+    ctx.fillStyle = C.eye;
+    p(ctx, 6, 2, 1, 1);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(6 * S + 2, 2 * S, 1, 1);
+
+  } else {
+    // Default (original mullet look)
+    ctx.fillStyle = C.hairD;
+    p(ctx, 0, 1, 2, 2);
+    p(ctx, 0, 3, 1, 3);
+    ctx.fillStyle = C.hairM;
+    p(ctx, 0, 0, 2, 2);
+    p(ctx, 1, 3, 1, 2);
+    ctx.fillStyle = C.hairL;
+    p(ctx, 0, 2, 1, 1);
+    ctx.fillStyle = C.hairD;
+    p(ctx, 2, 0, 6, 1);
+    ctx.fillStyle = C.hairM;
+    p(ctx, 2, 0, 5, 1);
+    ctx.fillStyle = C.hairL;
+    p(ctx, 3, 0, 3, 1);
+    ctx.fillStyle = C.skin;
+    p(ctx, 2, 1, 6, 3);
+    ctx.fillStyle = C.skinD;
+    p(ctx, 2, 4, 6, 1);
+    ctx.fillStyle = C.eye;
+    p(ctx, 6, 2, 1, 1);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(6 * S + 2, 2 * S, 1, 1);
+  }
 
   // ── Shirt ─────────────────────────────────────────────────────────────────
-  ctx.fillStyle = C.shirtD;
+  ctx.fillStyle = B.shirtD;
   p(ctx, 2, 5, 6, 3);
-  ctx.fillStyle = C.shirtM;
+  ctx.fillStyle = B.shirtM;
   p(ctx, 2, 5, 5, 3);
-  ctx.fillStyle = '#ff6659';            // collar highlight pixel
+  ctx.fillStyle = B.collar;
   p(ctx, 2, 5, 1, 1);
 
   // Belt
-  ctx.fillStyle = C.belt;
+  ctx.fillStyle = B.belt;
   p(ctx, 2, 8, 6, 1);
 
   // ── Legs ──────────────────────────────────────────────────────────────────
   // back leg: cols 2–3   front leg: cols 5–6
   // Walk cycle: 0=neutral 1=back up 2=neutral 3=front up
   if (state === 'jump') {
-    ctx.fillStyle = C.pantsM;
+    ctx.fillStyle = B.pantsM;
     p(ctx, 2, 9,  2, 2);   // back leg tucked
     p(ctx, 5, 10, 2, 2);   // front leg tucked lower
-    ctx.fillStyle = C.bootM;
+    ctx.fillStyle = B.bootM;
     p(ctx, 2, 11, 2, 1);
     p(ctx, 5, 12, 2, 1);
 
   } else if (state === 'fall') {
-    ctx.fillStyle = C.pantsM;
+    ctx.fillStyle = B.pantsM;
     p(ctx, 1, 9,  2, 3);   // legs spread
     p(ctx, 6, 9,  2, 3);
-    ctx.fillStyle = C.bootM;
+    ctx.fillStyle = B.bootM;
     p(ctx, 1, 12, 2, 1);
     p(ctx, 6, 12, 2, 1);
 
@@ -786,14 +1067,14 @@ function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa') {
     const bLen = 3 - bOff;
     const fLen = 3 - fOff;
 
-    ctx.fillStyle = C.pantsD;
+    ctx.fillStyle = B.pantsD;
     p(ctx, 2, 9 + bOff, 2, bLen);   // back leg (darker)
-    ctx.fillStyle = C.pantsM;
+    ctx.fillStyle = B.pantsM;
     p(ctx, 5, 9 + fOff, 2, fLen);   // front leg
 
-    ctx.fillStyle = C.bootD;
+    ctx.fillStyle = B.bootD;
     p(ctx, 2, 9 + bOff + bLen, 2, 1);
-    ctx.fillStyle = C.bootM;
+    ctx.fillStyle = B.bootM;
     p(ctx, 5, 9 + fOff + fLen, 2, 1);
   }
 
