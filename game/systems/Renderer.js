@@ -139,14 +139,123 @@ export class Renderer {
     ctx.translate(-w / 2, -h);
 
     const frame = Math.floor(Date.now() / 250) % 2;
-    if (type === 'slime')         _slime(ctx, w, h, frame);
-    else if (type === 'mushroom') _mushroom(ctx, w, h, frame);
+    if (type === 'slime')         _slime(ctx, w, h, frame, enemy.skin);
+    else if (type === 'mushroom') _mushroom(ctx, w, h, frame, enemy.skin);
 
     ctx.restore();
   }
 
-  drawBackground(ctx, camera, worldW, worldH) {
-    _background(ctx, camera, worldW, worldH);
+  drawBackground(ctx, camera, worldW, worldH, world) {
+    _background(ctx, camera, worldW, worldH, world);
+  }
+
+  // ── Portal ────────────────────────────────────────────────────────────────
+
+  drawPortal(ctx, px, py, pw, ph, color) {
+    const cx  = px + pw / 2;
+    const cy  = py + ph * 0.72;  // oval center — lower inside the zone
+    const rx  = pw * 0.40;
+    const ry  = ph * 0.52;
+    const t   = Date.now() / 1000;
+    const pulse = 0.72 + 0.28 * Math.sin(t * 2.4);
+
+    ctx.save();
+
+    // Glow shadow
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 28 * pulse;
+
+    // Dark portal void
+    ctx.fillStyle = '#04030e';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Outer ring
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 4;
+    ctx.globalAlpha = pulse;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Inner secondary ring
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5;
+    ctx.globalAlpha = pulse * 0.5;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx * 0.70, ry * 0.70, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Orbiting sparkles
+    ctx.fillStyle = color;
+    for (let i = 0; i < 12; i++) {
+      const a     = (i / 12) * Math.PI * 2 + t * 1.4;
+      const sx    = cx + Math.cos(a) * rx * 0.78;
+      const sy    = cy + Math.sin(a) * ry * 0.78;
+      const alpha = 0.35 + 0.65 * Math.abs(Math.sin(t * 2.2 + i * 0.52));
+      ctx.globalAlpha = alpha;
+      ctx.fillRect(sx - 2, sy - 2, i % 3 === 0 ? 4 : 3, i % 3 === 0 ? 4 : 3);
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+
+    // "NEXT WORLD" label above
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 10;
+    ctx.fillStyle   = color;
+    ctx.font        = 'bold 13px monospace';
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = pulse;
+    ctx.fillText('▲  NEXT WORLD  ▲', cx, py + 10);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+    ctx.textBaseline = 'alphabetic';
+
+    ctx.restore();
+  }
+
+  // ── World transition splash ───────────────────────────────────────────────
+
+  drawWorldTransition(ctx, canvasW, canvasH, transition, targetWorld) {
+    const { phase, t, duration } = transition;
+    const alpha = phase === 'fadeOut' ? t / duration
+                : phase === 'fadeIn'  ? 1 - t / duration
+                : 1;  // splash = fully black
+
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(1, alpha)})`;
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    if (phase !== 'splash') return;
+
+    const mid = canvasH / 2;
+    ctx.textAlign = 'center';
+
+    ctx.fillStyle   = '#c89a30';
+    ctx.font        = 'bold 52px monospace';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`WORLD  ${targetWorld.id}`, canvasW / 2, mid - 48);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font      = 'bold 22px monospace';
+    ctx.fillText(targetWorld.name, canvasW / 2, mid + 4);
+
+    ctx.fillStyle = '#aaaaaa';
+    ctx.font      = '14px monospace';
+    ctx.fillText(targetWorld.subtitle, canvasW / 2, mid + 36);
+
+    if (targetWorld.enemyMult.hp > 1) {
+      const pct = Math.round(targetWorld.enemyMult.hp * 100);
+      ctx.fillStyle = '#ff7070';
+      ctx.font      = 'bold 13px monospace';
+      ctx.fillText(`⚠  Enemies are ${pct}% stronger`, canvasW / 2, mid + 76);
+    }
+
+    ctx.textBaseline = 'alphabetic';
   }
 
   drawHUD(ctx, player, canvasW, canvasH) {
@@ -752,44 +861,42 @@ function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa') {
 // ═════════════════════════════════════════════════════════════════════════════
 //   SLIME   32 × 28
 // ═════════════════════════════════════════════════════════════════════════════
-function _slime(ctx, w, h, frame) {
+function _slime(ctx, w, h, frame, skin) {
+  const slimeD = skin?.slimeD ?? C.slimeD;
+  const slimeM = skin?.slimeM ?? C.slimeM;
+  const slimeL = skin?.slimeL ?? C.slimeL;
+
   const bounce = frame === 0 ? 0 : -3;
   const squash = frame === 1 ? 3 : 0;
   const cy = h * 0.62 + bounce;
   const rx = w * 0.46;
   const ry = h * 0.40 + squash;
 
-  // Ground shadow
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
   ctx.beginPath();
   ctx.ellipse(w / 2, h - 3, rx * 0.7, 4, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Body shadow layer
-  ctx.fillStyle = C.slimeD;
+  ctx.fillStyle = slimeD;
   ctx.beginPath();
   ctx.ellipse(w / 2 + 2, cy + 3, rx * 0.88, ry * 0.8, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Main body
-  ctx.fillStyle = C.slimeM;
+  ctx.fillStyle = slimeM;
   ctx.beginPath();
   ctx.ellipse(w / 2, cy, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Sheen highlight
-  ctx.fillStyle = C.slimeL;
+  ctx.fillStyle = slimeL;
   ctx.beginPath();
   ctx.ellipse(w * 0.33, cy - ry * 0.28, rx * 0.28, ry * 0.22, -0.4, 0, Math.PI * 2);
   ctx.fill();
 
-  // Antenna nub
-  ctx.fillStyle = C.slimeM;
+  ctx.fillStyle = slimeM;
   ctx.fillRect(w * 0.45, cy - ry - 5, 4, 5);
-  ctx.fillStyle = C.slimeL;
+  ctx.fillStyle = slimeL;
   ctx.fillRect(w * 0.44, cy - ry - 6, 5, 3);
 
-  // Eyes
   const eyeY = cy - ry * 0.25;
   ctx.fillStyle = '#fff';
   ctx.fillRect(w * 0.20, eyeY - 4, 8, 8);
@@ -801,8 +908,7 @@ function _slime(ctx, w, h, frame) {
   ctx.fillRect(w * 0.22 + 3, eyeY - 2, 1, 1);
   ctx.fillRect(w * 0.57 + 3, eyeY - 2, 1, 1);
 
-  // Bottom drip
-  ctx.fillStyle = C.slimeM;
+  ctx.fillStyle = slimeM;
   ctx.fillRect(w * 0.58, cy + ry - 3, 3, 7);
   ctx.fillRect(w * 0.58 - 1, cy + ry + 3, 5, 3);
 }
@@ -810,66 +916,67 @@ function _slime(ctx, w, h, frame) {
 // ═════════════════════════════════════════════════════════════════════════════
 //   MUSHROOM   34 × 42
 // ═════════════════════════════════════════════════════════════════════════════
-function _mushroom(ctx, w, h, frame) {
+function _mushroom(ctx, w, h, frame, skin) {
+  const capD = skin?.capD ?? C.capD;
+  const capM = skin?.capM ?? C.capM;
+  const capL = skin?.capL ?? C.capL;
+  const stemD = skin?.stemD ?? C.stemD;
+  const stemM = skin?.stemM ?? C.stemM;
+  const spot  = skin?.spot  ?? C.spot;
+
   const bob = frame === 0 ? 0 : -1;
 
-  // ── Cap ───────────────────────────────────────────────────────────────────
   const capCx = w / 2;
   const capCy = h * 0.30 + bob;
   const capRx = w * 0.50;
   const capRy = h * 0.33;
 
-  ctx.fillStyle = C.capD;
+  ctx.fillStyle = capD;
   ctx.beginPath();
   ctx.ellipse(capCx + 2, capCy + 3, capRx, capRy, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = C.capM;
+  ctx.fillStyle = capM;
   ctx.beginPath();
   ctx.ellipse(capCx, capCy, capRx, capRy, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = C.capL;
+  ctx.fillStyle = capL;
   ctx.beginPath();
   ctx.ellipse(capCx - capRx * 0.22, capCy - capRy * 0.25, capRx * 0.28, capRy * 0.22, -0.3, 0, Math.PI * 2);
   ctx.fill();
 
-  // Spots
-  ctx.fillStyle = C.spot;
+  ctx.fillStyle = spot;
   _oval(ctx, capCx - capRx * 0.35, capCy - capRy * 0.05, 5, 4);
   _oval(ctx, capCx + capRx * 0.25, capCy - capRy * 0.20, 4, 3);
   _oval(ctx, capCx + capRx * 0.05, capCy + capRy * 0.15, 3, 3);
 
-  // Cap brim edge
-  ctx.fillStyle = C.capD;
+  ctx.fillStyle = capD;
   ctx.fillRect(capCx - capRx * 0.9, capCy + capRy * 0.7, capRx * 1.8, 4);
 
-  // ── Stem ──────────────────────────────────────────────────────────────────
   const stemX = w * 0.18;
   const stemW = w * 0.64;
   const stemY = h * 0.58 + bob;
   const stemH = h * 0.42;
 
-  ctx.fillStyle = C.stemD;
+  ctx.fillStyle = stemD;
   ctx.fillRect(stemX + 2, stemY + 2, stemW, stemH);
-  ctx.fillStyle = C.stemM;
+  ctx.fillStyle = stemM;
   ctx.fillRect(stemX, stemY, stemW, stemH);
   ctx.fillStyle = '#fffff0';
-  ctx.fillRect(stemX + stemW * 0.15, stemY, stemW * 0.18, stemH);  // highlight strip
+  ctx.fillRect(stemX + stemW * 0.15, stemY, stemW * 0.18, stemH);
 
-  // Eyes (front = right side)
   ctx.fillStyle = '#333';
   ctx.fillRect(w * 0.55, stemY + stemH * 0.20, 5, 5);
   ctx.fillStyle = '#fff';
   ctx.fillRect(w * 0.56, stemY + stemH * 0.20, 2, 2);
 
-  // ── Stumpy legs ───────────────────────────────────────────────────────────
   const legW = stemW * 0.30;
   const legH = stemH * 0.28;
   const legY = stemY + stemH - 2;
 
-  ctx.fillStyle = C.stemD;
-  ctx.fillRect(stemX - 2,             legY + (frame === 0 ? 0 : 2),  legW, legH - (frame === 0 ? 0 : 2));
+  ctx.fillStyle = stemD;
+  ctx.fillRect(stemX - 2,                legY + (frame === 0 ? 0 : 2), legW, legH - (frame === 0 ? 0 : 2));
   ctx.fillRect(stemX + stemW - legW + 2, legY + (frame === 1 ? 0 : 2), legW, legH - (frame === 1 ? 0 : 2));
 }
 
@@ -882,52 +989,182 @@ function _oval(ctx, cx, cy, rx, ry) {
 // ═════════════════════════════════════════════════════════════════════════════
 //   BACKGROUND  (3-layer parallax, drawn in world-space coordinates)
 // ═════════════════════════════════════════════════════════════════════════════
-function _background(ctx, camera, worldW, worldH) {
-  const { x: cx, y: cy, viewW: vW, viewH: vH } = camera;
+function _background(ctx, camera, worldW, worldH, world) {
+  if (world?.bgStyle === 'ellinia') { _backgroundEllinia(ctx, camera, world); return; }
+  if (world?.bgStyle === 'perion')  { _backgroundPerion(ctx, camera, world);  return; }
+  _backgroundHenesys(ctx, camera, world);
+}
 
-  // ── Bright Henesys daytime sky ────────────────────────────────────────────
+// ── World 1: Henesys Outskirts — bright daytime ───────────────────────────────
+function _backgroundHenesys(ctx, camera, world) {
+  const { x: cx, y: cy, viewW: vW, viewH: vH } = camera;
+  const s = world?.sky ?? { top: '#4ab8f8', mid: '#82d4fa', bot: '#c8ecff' };
+  const h = world?.hills ?? { far: '#b0c4e8', mid1: '#5abe38', mid1h: '#72da50', near: '#3ea828' };
+
   const sky = ctx.createLinearGradient(cx, cy, cx, cy + vH);
-  sky.addColorStop(0,    '#4ab8f8');
-  sky.addColorStop(0.55, '#82d4fa');
-  sky.addColorStop(1,    '#c8ecff');
+  sky.addColorStop(0, s.top); sky.addColorStop(0.55, s.mid); sky.addColorStop(1, s.bot);
   ctx.fillStyle = sky;
   ctx.fillRect(cx - 2, cy - 2, vW + 4, vH + 4);
 
-  // ── Fluffy clouds — two layers at different depths ────────────────────────
-  _parallax(ctx, camera, 0.05, 800, (c2, ox) => {
-    _clouds(c2, ox, cy + vH * 0.06, vH, 800, 4);
-  });
-  _parallax(ctx, camera, 0.12, 600, (c2, ox) => {
-    _clouds(c2, ox, cy + vH * 0.20, vH, 600, 3);
-  });
+  _parallax(ctx, camera, 0.05, 800, (c2, ox) => { _clouds(c2, ox, cy + vH * 0.06, vH, 800, 4); });
+  _parallax(ctx, camera, 0.12, 600, (c2, ox) => { _clouds(c2, ox, cy + vH * 0.20, vH, 600, 3); });
 
-  // ── Distant mountains (soft periwinkle) ───────────────────────────────────
   _parallax(ctx, camera, 0.08, 900, (c2, ox) => {
-    c2.fillStyle = '#b0c4e8';
-    _peaks(c2, ox, cy + vH * 0.55, vH * 0.20, 900, 7, 41);
+    c2.fillStyle = h.far; _peaks(c2, ox, cy + vH * 0.55, vH * 0.20, 900, 7, 41);
   });
-
-  // ── Mid rolling hills (bright green) ─────────────────────────────────────
   _parallax(ctx, camera, 0.18, 700, (c2, ox) => {
-    c2.fillStyle = '#5abe38';
-    _hills(c2, ox, cy + vH * 0.66, vH * 0.18, 700, 5, 29);
+    c2.fillStyle = h.mid1; _hills(c2, ox, cy + vH * 0.66, vH * 0.18, 700, 5, 29);
   });
-  // Hill highlight pass
   _parallax(ctx, camera, 0.18, 700, (c2, ox) => {
-    c2.fillStyle = '#72da50';
-    _hills(c2, ox, cy + vH * 0.64, vH * 0.06, 700, 5, 29);
+    c2.fillStyle = h.mid1h; _hills(c2, ox, cy + vH * 0.64, vH * 0.06, 700, 5, 29);
   });
-
-  // ── Near hills (vivid green) ──────────────────────────────────────────────
   _parallax(ctx, camera, 0.30, 500, (c2, ox) => {
-    c2.fillStyle = '#3ea828';
-    _hills(c2, ox, cy + vH * 0.77, vH * 0.14, 500, 4, 23);
+    c2.fillStyle = h.near; _hills(c2, ox, cy + vH * 0.77, vH * 0.14, 500, 4, 23);
   });
-
-  // ── Henesys trees — mix of green round trees and pink sakura ─────────────
   _parallax(ctx, camera, 0.40, 400, (c2, ox) => {
     _henesysTrees(c2, ox, cy + vH * 0.81, vH * 0.18, 400, 4);
   });
+}
+
+// ── World 2: Ellinia Forest — night sky with stars ────────────────────────────
+function _backgroundEllinia(ctx, camera, world) {
+  const { x: cx, y: cy, viewW: vW, viewH: vH } = camera;
+  const s = world.sky;
+  const h = world.hills;
+
+  const sky = ctx.createLinearGradient(cx, cy, cx, cy + vH);
+  sky.addColorStop(0, s.top); sky.addColorStop(0.6, s.mid); sky.addColorStop(1, s.bot);
+  ctx.fillStyle = sky;
+  ctx.fillRect(cx - 2, cy - 2, vW + 4, vH + 4);
+
+  // Stars
+  const t = Date.now() / 1800;
+  for (let i = 0; i < 70; i++) {
+    const sx    = cx + ((i * 137 + 41) % (vW + 300)) - 150;
+    const sy    = cy + ((i * 97  + 17) % (vH * 0.55));
+    const twinkle = 0.25 + 0.75 * Math.abs(Math.sin(t + i * 0.63));
+    ctx.globalAlpha = twinkle * 0.85;
+    ctx.fillStyle   = i % 5 === 0 ? '#c0d8ff' : '#ffffff';
+    ctx.fillRect(sx, sy, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? 2 : 1);
+  }
+  ctx.globalAlpha = 1;
+
+  _parallax(ctx, camera, 0.06, 1000, (c2, ox) => {
+    c2.fillStyle = h.far; _peaks(c2, ox, cy + vH * 0.50, vH * 0.24, 1000, 9, 37);
+  });
+  _parallax(ctx, camera, 0.14, 800, (c2, ox) => {
+    c2.fillStyle = h.mid1; _hills(c2, ox, cy + vH * 0.64, vH * 0.20, 800, 5, 23);
+  });
+  _parallax(ctx, camera, 0.14, 800, (c2, ox) => {
+    c2.fillStyle = h.mid1h; _hills(c2, ox, cy + vH * 0.61, vH * 0.07, 800, 5, 23);
+  });
+  _parallax(ctx, camera, 0.26, 600, (c2, ox) => {
+    c2.fillStyle = h.near; _hills(c2, ox, cy + vH * 0.76, vH * 0.15, 600, 4, 19);
+  });
+  _parallax(ctx, camera, 0.38, 450, (c2, ox) => {
+    _elliniaTrees(c2, ox, cy + vH * 0.80, vH * 0.20, 450, 5);
+  });
+}
+
+// ── World 3: Perion Ruins — volcanic haze ─────────────────────────────────────
+function _backgroundPerion(ctx, camera, world) {
+  const { x: cx, y: cy, viewW: vW, viewH: vH } = camera;
+  const s = world.sky;
+  const h = world.hills;
+
+  const sky = ctx.createLinearGradient(cx, cy, cx, cy + vH);
+  sky.addColorStop(0, s.top); sky.addColorStop(0.5, s.mid); sky.addColorStop(1, s.bot);
+  ctx.fillStyle = sky;
+  ctx.fillRect(cx - 2, cy - 2, vW + 4, vH + 4);
+
+  // Floating embers
+  const t = Date.now() / 1000;
+  for (let i = 0; i < 30; i++) {
+    const drift = (t * 0.18 + i * 0.3) % 1;
+    const ex    = cx + ((i * 173) % (vW + 100)) - 50;
+    const ey    = cy + vH * (1 - drift) - ((i * 67) % (vH * 0.4));
+    const alpha = Math.max(0, Math.sin(drift * Math.PI) * 0.7);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = i % 3 === 0 ? '#ff8800' : '#ff4400';
+    ctx.fillRect(ex, ey, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+
+  _parallax(ctx, camera, 0.05, 1000, (c2, ox) => {
+    c2.fillStyle = h.far; _peaks(c2, ox, cy + vH * 0.50, vH * 0.26, 1000, 11, 53);
+  });
+  _parallax(ctx, camera, 0.11, 800, (c2, ox) => {
+    c2.fillStyle = h.mid1; _peaks(c2, ox, cy + vH * 0.64, vH * 0.21, 800, 8, 31);
+  });
+  _parallax(ctx, camera, 0.11, 800, (c2, ox) => {
+    c2.fillStyle = h.mid1h; _peaks(c2, ox, cy + vH * 0.60, vH * 0.08, 800, 8, 31);
+  });
+  _parallax(ctx, camera, 0.22, 600, (c2, ox) => {
+    c2.fillStyle = h.near; _peaks(c2, ox, cy + vH * 0.76, vH * 0.16, 600, 6, 23);
+  });
+  _parallax(ctx, camera, 0.38, 500, (c2, ox) => {
+    _perionRuins(c2, ox, cy + vH * 0.82, vH * 0.16, 500, 6);
+  });
+}
+
+// ── Ellinia spooky trees with glowing tips ────────────────────────────────────
+function _elliniaTrees(ctx, ox, baseY, maxH, tileW, count) {
+  const spacing = tileW / count;
+  for (let i = 0; i < count; i++) {
+    const tx = ox + i * spacing + ((i * 137) % (spacing * 0.55));
+    const th = maxH * (0.55 + (i * 41 % 45) / 100);
+
+    // Trunk
+    ctx.fillStyle = '#0e0a18';
+    ctx.fillRect(tx - 4, baseY - th * 0.45, 8, th * 0.55);
+
+    // Bare branches
+    ctx.fillStyle = '#0e0a18';
+    ctx.fillRect(tx - 22, baseY - th * 0.62, 18, 3);
+    ctx.fillRect(tx +  4, baseY - th * 0.67, 20, 3);
+    ctx.fillRect(tx - 12, baseY - th * 0.78, 12, 2);
+    ctx.fillRect(tx +  2, baseY - th * 0.80, 14, 2);
+
+    // Glowing canopy clumps (alternating purple/teal)
+    const glows = ['#5010a0', '#3a0880', '#6828b0'];
+    ctx.fillStyle   = glows[i % glows.length];
+    ctx.shadowColor = '#9040e0';
+    ctx.shadowBlur  = 10;
+    ctx.beginPath();
+    ctx.ellipse(tx - 12, baseY - th * 0.63, 12, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(tx + 14, baseY - th * 0.68, 14, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(tx -  6, baseY - th * 0.82, 10, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(tx +  8, baseY - th * 0.84, 11, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+// ── Perion ruined stone columns ───────────────────────────────────────────────
+function _perionRuins(ctx, ox, baseY, maxH, tileW, count) {
+  const spacing = tileW / count;
+  for (let i = 0; i < count; i++) {
+    const rx = ox + i * spacing + ((i * 113) % (spacing * 0.55));
+    const rh = maxH * (0.45 + (i * 37 % 55) / 100);
+    const rw = 10 + (i * 23 % 14);
+
+    ctx.fillStyle = '#2c1006';
+    ctx.fillRect(rx - rw / 2, baseY - rh, rw, rh);
+    ctx.fillStyle = '#4a2010';
+    ctx.fillRect(rx - rw / 2, baseY - rh, rw * 0.28, rh);
+    // Broken capital
+    ctx.fillStyle = '#3a1808';
+    ctx.fillRect(rx - rw / 2 - 3, baseY - rh, rw + 6, 5);
+    // Glowing crack
+    ctx.fillStyle = 'rgba(255,70,0,0.38)';
+    ctx.fillRect(rx - 1, baseY - rh * 0.65, 2, rh * 0.32);
+  }
 }
 
 /**

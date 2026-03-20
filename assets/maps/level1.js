@@ -166,6 +166,13 @@ export const LEVEL1 = {
   playerStart: { col: 3, row: 38 },
 
   /**
+   * Portal zone — player overlapping this rect triggers a world transition.
+   * Centered on the top floor (row 7, cols 4-21).  Rows 4-6 above the platform.
+   * x = col 11 × 48 = 528,  y = row 4 × 48 = 192,  w = 3 tiles,  h = 3 tiles
+   */
+  portal: { x: 528, y: 192, w: 144, h: 144 },
+
+  /**
    * Purely visual props — no collision. type + world-pixel (x, y) top-left.
    * flowers also carry a seed value to vary petal colours per cluster.
    *

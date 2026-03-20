@@ -37,7 +37,9 @@ export class Enemy extends Entity {
     this.spawnX = x;
     this.spawnY = y;
     this.startX = x;
-    this.patrolRange = 120;
+    this.patrolRange  = 120;
+    this.patrolSpeed  = PATROL_SPEED;  // exposed so worlds can scale it
+    this.skin         = null;          // colour override set by GameScene per world
     this.dir   = 1;
     this.state = 'patrol'; // patrol | chase | attack | hurt | dead
     this.attackCooldown = 0;
@@ -48,6 +50,8 @@ export class Enemy extends Entity {
     this.pendingDrops = []; // filled on death, drained by GameScene
 
     Object.assign(this, STATS[type] || STATS.slime);
+    // _baseStats is used by _respawn so scaled worlds keep their multiplier on re-spawn
+    this._baseStats = { ...STATS[type] || STATS.slime, patrolSpeed: PATROL_SPEED };
   }
 
   update(dt, player, tilemap) {
@@ -77,7 +81,7 @@ export class Enemy extends Entity {
       this.state  = 'chase';
       this.facing = Math.sign(dx);
       if (dist > ATTACK_RANGE) {
-        this.vx = this.facing * PATROL_SPEED * 1.4;
+        this.vx = this.facing * this.patrolSpeed * 1.4;
       } else {
         this.vx = 0;
         if (this.attackCooldown <= 0) {
@@ -87,7 +91,7 @@ export class Enemy extends Entity {
       }
     } else {
       this.state = 'patrol';
-      this.vx = this.dir * PATROL_SPEED;
+      this.vx = this.dir * this.patrolSpeed;
       if (this.x > this.startX + this.patrolRange) { this.dir = -1; this.facing = -1; }
       if (this.x < this.startX - this.patrolRange) { this.dir =  1; this.facing =  1; }
     }
@@ -100,7 +104,7 @@ export class Enemy extends Entity {
         if (this.state === 'patrol') {
           this.dir    = -this.dir;
           this.facing = -this.facing;
-          this.vx     = this.dir * PATROL_SPEED;
+          this.vx     = this.dir * this.patrolSpeed;
         } else {
           // During chase, stop at the edge rather than fall off.
           this.vx = 0;
@@ -138,7 +142,10 @@ export class Enemy extends Entity {
   }
 
   _respawn() {
-    Object.assign(this, STATS[this.type] || STATS.slime);
+    // Use _baseStats so scaled worlds keep their multipliers across re-spawns
+    const { patrolSpeed, ...stats } = this._baseStats;
+    Object.assign(this, stats);
+    this.patrolSpeed = patrolSpeed;
     this.x    = this.spawnX;
     this.y    = this.spawnY;
     this.vx   = 0;

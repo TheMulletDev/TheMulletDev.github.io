@@ -7,6 +7,7 @@ import { Player }   from '../entities/Player.js';
 import { Enemy }    from '../entities/Enemy.js';
 import { Drop }     from '../entities/Drop.js';
 import { LEVEL1 }     from '../../assets/maps/level1.js';
+import { WORLDS }     from '../../assets/worlds.js';
 import { CHANGELOG }  from '../../assets/changelog.js';
 
 export class GameScene {
@@ -17,12 +18,14 @@ export class GameScene {
     this.combat   = new Combat();
     this.renderer = new Renderer();
 
+    // World progression state
+    this._worldIdx        = 0;           // index into WORLDS[]
+    this._worldTransition = null;        // { phase, t, duration, targetIdx }
+
     const ps = LEVEL1.playerStart;
     this.player = new Player(ps.col * TILE, (ps.row - 1) * TILE);
 
-    this.enemies = LEVEL1.enemySpawns.map(s =>
-      new Enemy(s.col * TILE, (s.row - 1) * TILE, s.type)
-    );
+    this.enemies = this._spawnEnemies(WORLDS[0]);
 
     this.camera = new Camera(
       canvas.width, canvas.height,
@@ -141,11 +144,59 @@ export class GameScene {
     }
   }
 
+  /** Spawn enemies for the given world, applying stat multipliers and skins. */
+  _spawnEnemies(world) {
+    const { enemyMult, enemySkin } = world;
+    return LEVEL1.enemySpawns.map(s => {
+      const e = new Enemy(s.col * TILE, (s.row - 1) * TILE, s.type);
+      e.hp          = e.maxHp = Math.round(e.maxHp * enemyMult.hp);
+      e.dmg         = Math.round(e.dmg   * enemyMult.dmg);
+      e.exp         = Math.round(e.exp   * enemyMult.exp);
+      e.patrolSpeed = e.patrolSpeed * enemyMult.spd;
+      // Store scaled values so _respawn() re-applies them correctly
+      e._baseStats  = { hp: e.hp, maxHp: e.maxHp, dmg: e.dmg, exp: e.exp, patrolSpeed: e.patrolSpeed };
+      if (enemySkin) e.skin = enemySkin[s.type] ?? null;
+      return e;
+    });
+  }
+
+  /** Advance to the next world after the fade-out completes. */
+  _loadNextWorld() {
+    this._worldIdx = this._worldTransition.targetIdx;
+    const world = WORLDS[this._worldIdx];
+    // Move player back to spawn without resetting stats/gear/level
+    const ps = LEVEL1.playerStart;
+    this.player.x  = ps.col * TILE;
+    this.player.y  = (ps.row - 1) * TILE;
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.drops   = [];
+    this.enemies = this._spawnEnemies(world);
+  }
+
   update(dt) {
     const { player, enemies, tilemap, combat, camera, canvas } = this;
 
     // Resize camera if window changed
     camera.resize(canvas.width, canvas.height);
+
+    // --- World transition timer ---
+    if (this._worldTransition) {
+      const tr = this._worldTransition;
+      tr.t += dt;
+      if (tr.t >= tr.duration) {
+        if (tr.phase === 'fadeOut') {
+          this._loadNextWorld();
+          this._worldTransition = { phase: 'splash', t: 0, duration: 2.8, targetIdx: tr.targetIdx };
+        } else if (tr.phase === 'splash') {
+          this._worldTransition = { phase: 'fadeIn', t: 0, duration: 0.9, targetIdx: tr.targetIdx };
+        } else {
+          this._worldTransition = null;
+        }
+      }
+      // Freeze gameplay during the splash screen only
+      if (this._worldTransition?.phase === 'splash') return;
+    }
 
     // --- Player ---
     player.update(dt, this.input);
@@ -213,6 +264,15 @@ export class GameScene {
     // --- Camera ---
     camera.follow(player);
 
+    // --- Portal: advance to next world ---
+    if (!player.dead && !this._worldTransition) {
+      const portal = LEVEL1.portal;
+      if (portal && overlaps(player, portal)) {
+        const targetIdx = (this._worldIdx + 1) % WORLDS.length;
+        this._worldTransition = { phase: 'fadeOut', t: 0, duration: 1.2, targetIdx };
+      }
+    }
+
     // --- Respawn ---
     if (player.dead) {
       this._deadTimer += dt;
@@ -221,26 +281,33 @@ export class GameScene {
   }
 
   _respawn() {
-    this._deadTimer = 0;
+    this._deadTimer   = 0;
+    this._worldIdx    = 0;  // send player back to World 1 on death
+    this._worldTransition = null;
     this.drops = [];
     const ps = LEVEL1.playerStart;
-    this.player = new Player(ps.col * TILE, (ps.row - 1) * TILE);
-    this.enemies = LEVEL1.enemySpawns.map(s =>
-      new Enemy(s.col * TILE, (s.row - 1) * TILE, s.type)
-    );
+    this.player  = new Player(ps.col * TILE, (ps.row - 1) * TILE);
+    this.enemies = this._spawnEnemies(WORLDS[0]);
   }
 
   draw() {
     const { canvas, camera, tilemap, player, enemies, drops, combat, renderer } = this;
-    const ctx = canvas.ctx;
+    const ctx   = canvas.ctx;
+    const world = WORLDS[this._worldIdx];
 
     canvas.clear();
 
     // Background (world space)
     camera.apply(ctx);
-    renderer.drawBackground(ctx, camera, tilemap.width, tilemap.height);
-    tilemap.draw(ctx, camera);
+    renderer.drawBackground(ctx, camera, tilemap.width, tilemap.height, world);
+    tilemap.draw(ctx, camera, world.tiles);
     renderer.drawDecorations(ctx, LEVEL1.decorations);
+
+    // Portal
+    if (LEVEL1.portal && !this._worldTransition) {
+      const { x, y, w, h } = LEVEL1.portal;
+      renderer.drawPortal(ctx, x, y, w, h, world.portalColor);
+    }
 
     // Enemies
     for (const e of enemies) renderer.drawEnemy(ctx, e);
@@ -263,6 +330,12 @@ export class GameScene {
     renderer.drawChangelogButton(ctx, canvas.width, canvas.height, this._changelogOpen);
     if (this._changelogOpen) {
       renderer.drawChangelogOverlay(ctx, canvas.width, canvas.height, CHANGELOG, this._changelogScroll);
+    }
+
+    // World transition overlay
+    if (this._worldTransition) {
+      const targetWorld = WORLDS[this._worldTransition.targetIdx];
+      renderer.drawWorldTransition(ctx, canvas.width, canvas.height, this._worldTransition, targetWorld);
     }
 
     // Death overlay
