@@ -50,7 +50,7 @@ export class Enemy extends Entity {
     Object.assign(this, STATS[type] || STATS.slime);
   }
 
-  update(dt, player) {
+  update(dt, player, tilemap) {
     if (this.dead) {
       // Both timers count down in parallel; respawnTimer is longer.
       if (this.deathTimer  > 0) this.deathTimer  -= dt;
@@ -90,6 +90,22 @@ export class Enemy extends Entity {
       this.vx = this.dir * PATROL_SPEED;
       if (this.x > this.startX + this.patrolRange) { this.dir = -1; this.facing = -1; }
       if (this.x < this.startX - this.patrolRange) { this.dir =  1; this.facing =  1; }
+    }
+
+    // Edge detection: stop before walking off a platform.
+    if (tilemap && this.onGround && this.vx !== 0) {
+      const lookX = this.vx > 0 ? this.x + this.w + 2 : this.x - 2;
+      const lookY = this.y + this.h + 4;
+      if (!tilemap.hasSolidGround(lookX, lookY)) {
+        if (this.state === 'patrol') {
+          this.dir    = -this.dir;
+          this.facing = -this.facing;
+          this.vx     = this.dir * PATROL_SPEED;
+        } else {
+          // During chase, stop at the edge rather than fall off.
+          this.vx = 0;
+        }
+      }
     }
   }
 
