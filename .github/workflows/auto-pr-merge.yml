@@ -1,0 +1,49 @@
+name: Auto PR and Merge
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-pr-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create PR if it doesn't exist
+        id: create_pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          REPO="${{ github.repository }}"
+
+          # Check if a PR already exists for this branch
+          EXISTING=$(gh pr list --repo "$REPO" --head "$BRANCH" --json number -q '.[0].number')
+
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already exists for $BRANCH"
+            echo "pr_number=$EXISTING" >> "$GITHUB_OUTPUT"
+          else
+            PR_NUMBER=$(gh pr create \
+              --repo "$REPO" \
+              --head "$BRANCH" \
+              --base main \
+              --title "Auto PR: $BRANCH" \
+              --body "Automated PR from branch \`$BRANCH\`." \
+              --json number -q '.number')
+            echo "Created PR #$PR_NUMBER for $BRANCH"
+            echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge PR immediately
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge "${{ steps.create_pr.outputs.pr_number }}" \
+            --repo "${{ github.repository }}" \
+            --merge \
+            --delete-branch
