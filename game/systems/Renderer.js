@@ -577,59 +577,49 @@ function _oval(ctx, cx, cy, rx, ry) {
 // ═════════════════════════════════════════════════════════════════════════════
 function _background(ctx, camera, worldW, worldH) {
   const { x: cx, y: cy, viewW: vW, viewH: vH } = camera;
-  const t = Date.now();
 
-  // ── Sky gradient (fill visible area only) ────────────────────────────────
+  // ── Bright Henesys daytime sky ────────────────────────────────────────────
   const sky = ctx.createLinearGradient(cx, cy, cx, cy + vH);
-  sky.addColorStop(0,    '#06061a');
-  sky.addColorStop(0.45, '#1a237e');
-  sky.addColorStop(1,    '#2e3f6f');
+  sky.addColorStop(0,    '#4ab8f8');
+  sky.addColorStop(0.55, '#82d4fa');
+  sky.addColorStop(1,    '#c8ecff');
   ctx.fillStyle = sky;
   ctx.fillRect(cx - 2, cy - 2, vW + 4, vH + 4);
 
-  // ── Stars ─────────────────────────────────────────────────────────────────
-  // World-positioned so they don't shift as the camera moves.
-  ctx.fillStyle = 'rgba(255,255,255,0.65)';
-  for (let i = 0; i < 300; i++) {
-    const sx = (i * 211.3 + 7)  % worldW;
-    const sy = (i * 97.7  + 13) % (worldH * 0.40);
-    ctx.fillRect(sx, sy, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? 2 : 1);
-  }
-  // Twinkling accent stars
-  ctx.fillStyle = 'rgba(255,255,200,0.95)';
-  for (let i = 0; i < 18; i++) {
-    if (Math.floor((t / 650 + i * 0.61) % 2) === 0) {
-      const sx = (i * 347.1) % worldW;
-      const sy = (i * 163.7) % (worldH * 0.35);
-      ctx.fillRect(sx, sy, 2, 2);
-    }
-  }
+  // ── Fluffy clouds — two layers at different depths ────────────────────────
+  _parallax(ctx, camera, 0.05, 800, (c2, ox) => {
+    _clouds(c2, ox, cy + vH * 0.06, vH, 800, 4);
+  });
+  _parallax(ctx, camera, 0.12, 600, (c2, ox) => {
+    _clouds(c2, ox, cy + vH * 0.20, vH, 600, 3);
+  });
 
-  // ── Parallax layer helpers ────────────────────────────────────────────────
-  // f = scroll speed factor: 0 = fixed to screen, 1 = fixed to world.
-  // baseY is in world coordinates for the current camera view.
-
-  // Layer 1 — very far mountains
+  // ── Distant mountains (soft periwinkle) ───────────────────────────────────
   _parallax(ctx, camera, 0.08, 900, (c2, ox) => {
-    c2.fillStyle = '#161840';
-    _peaks(c2, ox, cy + vH * 0.50, vH * 0.22, 900, 7, 41);
+    c2.fillStyle = '#b0c4e8';
+    _peaks(c2, ox, cy + vH * 0.55, vH * 0.20, 900, 7, 41);
   });
 
-  // Layer 2 — mid mountains
-  _parallax(ctx, camera, 0.16, 700, (c2, ox) => {
-    c2.fillStyle = '#1e2d5e';
-    _peaks(c2, ox, cy + vH * 0.60, vH * 0.18, 700, 9, 37);
+  // ── Mid rolling hills (bright green) ─────────────────────────────────────
+  _parallax(ctx, camera, 0.18, 700, (c2, ox) => {
+    c2.fillStyle = '#5abe38';
+    _hills(c2, ox, cy + vH * 0.66, vH * 0.18, 700, 5, 29);
+  });
+  // Hill highlight pass
+  _parallax(ctx, camera, 0.18, 700, (c2, ox) => {
+    c2.fillStyle = '#72da50';
+    _hills(c2, ox, cy + vH * 0.64, vH * 0.06, 700, 5, 29);
   });
 
-  // Layer 3 — rolling hills
+  // ── Near hills (vivid green) ──────────────────────────────────────────────
   _parallax(ctx, camera, 0.30, 500, (c2, ox) => {
-    c2.fillStyle = '#0f2a0f';
-    _hills(c2, ox, cy + vH * 0.74, vH * 0.14, 500, 5, 29);
+    c2.fillStyle = '#3ea828';
+    _hills(c2, ox, cy + vH * 0.77, vH * 0.14, 500, 4, 23);
   });
 
-  // Layer 4 — tree silhouettes
+  // ── Henesys trees — mix of green round trees and pink sakura ─────────────
   _parallax(ctx, camera, 0.40, 400, (c2, ox) => {
-    _treeLine(c2, ox, cy + vH * 0.80, vH * 0.15, 400, 4);
+    _henesysTrees(c2, ox, cy + vH * 0.81, vH * 0.18, 400, 4);
   });
 }
 
@@ -682,31 +672,70 @@ function _hills(ctx, ox, baseY, maxH, tileW, count, seed) {
   ctx.fill();
 }
 
-function _treeLine(ctx, ox, baseY, treeH, tileW, count) {
+function _clouds(ctx, ox, baseY, vH, tileW, count) {
   const spacing = tileW / count;
   for (let i = 0; i < count; i++) {
-    const tx = ox + i * spacing + ((i * 137) % (spacing * 0.6)) - spacing * 0.3;
-    const th = treeH * (0.65 + 0.35 * ((i * 31) % 10) / 10);
-    const tw = th * 0.55;
+    const cx2 = ox + i * spacing + ((i * 173) % (spacing * 0.5));
+    const cy2 = baseY + ((i * 89) % (vH * 0.08));
+    const cw  = 60 + (i * 37) % 80;
+    const ch  = 18 + (i * 23) % 16;
+
+    // Cloud shadow base
+    ctx.fillStyle = 'rgba(190,215,255,0.55)';
+    ctx.beginPath();
+    ctx.ellipse(cx2 + 4, cy2 + ch * 0.45, cw * 0.52, ch * 0.48, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Main puff
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.beginPath();
+    ctx.ellipse(cx2, cy2, cw * 0.50, ch, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Left bump
+    ctx.beginPath();
+    ctx.ellipse(cx2 - cw * 0.32, cy2 + ch * 0.22, cw * 0.30, ch * 0.75, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Right bump
+    ctx.beginPath();
+    ctx.ellipse(cx2 + cw * 0.30, cy2 + ch * 0.28, cw * 0.28, ch * 0.70, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function _henesysTrees(ctx, ox, baseY, treeH, tileW, count) {
+  const spacing = tileW / count;
+  for (let i = 0; i < count; i++) {
+    const tx      = ox + i * spacing + ((i * 137) % (spacing * 0.6)) - spacing * 0.3;
+    const th      = treeH * (0.65 + 0.35 * ((i * 31) % 10) / 10);
+    const tw      = th * 0.65;
+    const isSakura = i % 3 === 0;
+
     // Trunk
-    ctx.fillStyle = '#1a0f06';
-    ctx.fillRect(tx - 3, baseY - th * 0.45, 6, th * 0.48);
-    // Lower canopy
-    ctx.fillStyle = '#0a1f0a';
-    ctx.beginPath();
-    ctx.moveTo(tx, baseY - th);
-    ctx.lineTo(tx - tw * 1.1, baseY - th * 0.45);
-    ctx.lineTo(tx + tw * 1.1, baseY - th * 0.45);
-    ctx.closePath();
-    ctx.fill();
-    // Upper canopy (wider)
-    ctx.fillStyle = '#0d2a0d';
-    ctx.beginPath();
-    ctx.moveTo(tx, baseY - th * 0.65);
-    ctx.lineTo(tx - tw * 1.4, baseY - th * 0.20);
-    ctx.lineTo(tx + tw * 1.4, baseY - th * 0.20);
-    ctx.closePath();
-    ctx.fill();
+    ctx.fillStyle = '#7a5a30';
+    ctx.fillRect(tx - 4, baseY - th * 0.50, 8, th * 0.52);
+
+    if (isSakura) {
+      // Cherry blossom — round pink canopy
+      ctx.fillStyle = '#f880b0';
+      ctx.beginPath();
+      ctx.ellipse(tx, baseY - th * 0.75, tw * 0.70, th * 0.44, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Lighter highlight puff
+      ctx.fillStyle = '#ffaad0';
+      ctx.beginPath();
+      ctx.ellipse(tx - tw * 0.22, baseY - th * 0.82, tw * 0.44, th * 0.28, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Green tree — round canopy
+      ctx.fillStyle = '#2e8c1e';
+      ctx.beginPath();
+      ctx.ellipse(tx, baseY - th * 0.72, tw * 0.65, th * 0.42, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Highlight puff
+      ctx.fillStyle = '#44aa30';
+      ctx.beginPath();
+      ctx.ellipse(tx - tw * 0.15, baseY - th * 0.78, tw * 0.42, th * 0.28, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 }
 
