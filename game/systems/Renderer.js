@@ -411,7 +411,25 @@ export class Renderer {
     ctx.globalAlpha = 0.35;
     _drawBtn(ctx, leftX,   btnY,   btnW,    btnH,    '◀');
     _drawBtn(ctx, rightX,  btnY,   btnW,    btnH,    '▶');
-    _drawBtn(ctx, potionX, rbtnY,  btnSize, btnSize, 'P', '#f0abfc');
+    _drawBtn(ctx, potionX, rbtnY,  btnSize, btnSize, '', '#f0abfc');
+    // Potion flask icon
+    const pcx = potionX + btnSize / 2;
+    const pcy = rbtnY   + btnSize / 2;
+    const ps  = btnSize * 0.027;       // scale: 1 unit ≈ 2.7% of button
+    ctx.save();
+    ctx.translate(pcx, pcy - ps);      // nudge up slightly for visual balance
+    ctx.scale(ps, ps);
+    ctx.fillStyle = '#9c1db9';         // neck (dark purple)
+    ctx.fillRect(-3, -10, 6, 9);
+    ctx.fillStyle = '#c4830a';         // cork
+    ctx.fillRect(-2, -13, 4, 3);
+    ctx.fillStyle = '#d946ef';         // body
+    ctx.fillRect(-7, -1, 14, 12);
+    ctx.fillStyle = '#a21caf';         // body shadow
+    ctx.fillRect(-7, 8, 14, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'; // shine
+    ctx.fillRect(-5, 0, 2, 6);
+    ctx.restore();
     _drawBtn(ctx, jumpX,   rbtnY,  btnSize, btnSize, '↑', '#4af');
     // Attack button — draw shell then overlay a sword icon
     _drawBtn(ctx, attackX, rbtnY, btnSize, btnSize, '', '#fa4');
