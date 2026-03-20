@@ -36,8 +36,11 @@ export class GameScene {
     this._deadTimer = 0;
 
     // Changelog overlay state
-    this._changelogOpen   = false;
-    this._changelogScroll = 0;
+    this._changelogOpen        = false;
+    this._changelogScroll      = 0;
+    this._touchScrollStartY    = 0;
+    this._touchScrollStart     = 0;
+    this._touchMoved           = false;
 
     // Click — toggle changelog or close it
     this._handleClick = (e) => {
@@ -50,8 +53,32 @@ export class GameScene {
     };
     canvas.el.addEventListener('click', this._handleClick);
 
-    // Touch — same, using first changed touch
-    this._handleTouch = (e) => {
+    // Touch start — record position for drag-scroll
+    this._handleTouchStart = (e) => {
+      this._touchScrollStartY = e.touches[0].clientY;
+      this._touchScrollStart  = this._changelogScroll;
+      this._touchMoved        = false;
+    };
+    canvas.el.addEventListener('touchstart', this._handleTouchStart, { passive: true });
+
+    // Touch move — drag to scroll the overlay
+    this._handleTouchMove = (e) => {
+      if (!this._changelogOpen) return;
+      const dy = this._touchScrollStartY - e.touches[0].clientY;
+      if (Math.abs(dy) > 6) this._touchMoved = true;
+      if (!this._touchMoved) return;
+      const r      = canvas.el.getBoundingClientRect();
+      const scaleY = canvas.height / r.height;
+      this._changelogScroll = Math.max(
+        0,
+        Math.min(this._changelogMaxScroll(), this._touchScrollStart + dy * scaleY)
+      );
+    };
+    canvas.el.addEventListener('touchmove', this._handleTouchMove, { passive: true });
+
+    // Touch end — treat as tap (close/open) only if finger barely moved
+    this._handleTouchEnd = (e) => {
+      if (this._touchMoved) { this._touchMoved = false; return; }
       const r     = canvas.el.getBoundingClientRect();
       const scaleX = canvas.width  / r.width;
       const scaleY = canvas.height / r.height;
@@ -60,14 +87,29 @@ export class GameScene {
       const my    = (t.clientY - r.top)  * scaleY;
       this._hitTestChangelog(mx, my);
     };
-    canvas.el.addEventListener('touchend', this._handleTouch, { passive: true });
+    canvas.el.addEventListener('touchend', this._handleTouchEnd, { passive: true });
 
-    // Scroll wheel — scroll the overlay content
+    // Scroll wheel — normalize deltaMode so pixels/lines/pages all feel right
     this._handleWheel = (e) => {
       if (!this._changelogOpen) return;
-      this._changelogScroll = Math.max(0, this._changelogScroll + e.deltaY * 0.4);
+      const LINE = 24, PAGE = 500;
+      const delta = e.deltaMode === 2 ? e.deltaY * PAGE
+                  : e.deltaMode === 1 ? e.deltaY * LINE
+                  : e.deltaY;
+      this._changelogScroll = Math.max(
+        0,
+        Math.min(this._changelogMaxScroll(), this._changelogScroll + delta * 0.6)
+      );
     };
     canvas.el.addEventListener('wheel', this._handleWheel, { passive: true });
+  }
+
+  /** Max pixels the changelog can scroll before the last entry disappears. */
+  _changelogMaxScroll() {
+    const { renderer, canvas } = this;
+    const { h: ph } = renderer.changelogPanelRect(canvas.width, canvas.height);
+    const bodyH = ph - 48 - 12;
+    return Math.max(0, renderer.changelogContentHeight(CHANGELOG) - bodyH);
   }
 
   /** Button / overlay hit-testing used by both click and touch handlers. */
