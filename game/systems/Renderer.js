@@ -50,19 +50,29 @@ export class Renderer {
   }
 
   drawEnemy(ctx, enemy) {
-    if (enemy.dead && enemy.deathTimer <= 0) return;
-    const { x, y, w, h, type, facing, hurtTimer, dead } = enemy;
+    const { x, y, w, h, type, facing, hurtTimer, dead, deathTimer, spawnFlash } = enemy;
+
+    // Invisible while waiting to respawn
+    if (dead && deathTimer <= 0) return;
+
+    // Death animation: progress 1→0 over DEATH_DURATION
+    const DEATH_DUR = 0.7;
+    const deathProgress = dead ? Math.max(0, deathTimer / DEATH_DUR) : 1;
+    const floatUp = dead ? (1 - deathProgress) * 28 : 0;  // float 28 px upward
 
     ctx.save();
-    ctx.globalAlpha = dead ? Math.max(0, enemy.deathTimer * 2) : 1;
-    if (hurtTimer > 0) ctx.filter = 'brightness(3)';
+    ctx.globalAlpha = deathProgress;
 
-    ctx.translate(x + w / 2, y + h);
-    ctx.scale(facing, 1);
+    if (hurtTimer > 0 || spawnFlash > 0) ctx.filter = 'brightness(3)';
+
+    // Translate to bottom-centre of sprite, apply float-up offset
+    ctx.translate(x + w / 2, y + h - floatUp);
+    // Scale in facing direction, and shrink to 0 on death
+    ctx.scale(facing * deathProgress, deathProgress);
     ctx.translate(-w / 2, -h);
 
     const frame = Math.floor(Date.now() / 250) % 2;
-    if (type === 'slime')    _slime(ctx, w, h, frame);
+    if (type === 'slime')         _slime(ctx, w, h, frame);
     else if (type === 'mushroom') _mushroom(ctx, w, h, frame);
 
     ctx.restore();
