@@ -510,7 +510,7 @@ export class Renderer {
     const rightX = leftX + btnW + canvasW * 0.02;
     const btnY   = canvasH - btnH - padBot;
 
-    const btnSize = Math.min(canvasW, canvasH) * 0.14;
+    const btnSize = Math.min(canvasW, canvasH) * 0.19;
     const rpad    = canvasH * 0.04;
     const potionX = canvasW - btnSize * 3 - rpad * 3;
     const jumpX   = canvasW - btnSize * 2 - rpad * 2;
