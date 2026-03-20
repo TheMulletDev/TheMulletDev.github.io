@@ -11,6 +11,8 @@ const JUMP_FORCE      = -620;
 const JUMP_FORCE_2    = -460; // double-jump is slightly shorter
 const ATTACK_DURATION = 0.25; // seconds
 const ATTACK_COOLDOWN  = 0.3;
+const WARRIOR_ATTACK_DURATION = 0.45; // slower, heavier swing
+const WARRIOR_ATTACK_COOLDOWN = 0.65;
 const INVINCIBLE_DURATION = 0.6;
 
 export class Player extends Entity {
@@ -114,9 +116,10 @@ export class Player extends Entity {
 
     // Attack
     if (input.isAttack() && this.attackCooldown <= 0 && !this.attacking) {
+      const isWarrior = this.playerClass?.id === 'warrior';
       this.attacking          = true;
-      this.attackTimer        = ATTACK_DURATION;
-      this.attackCooldown     = ATTACK_COOLDOWN;
+      this.attackTimer        = isWarrior ? WARRIOR_ATTACK_DURATION : ATTACK_DURATION;
+      this.attackCooldown     = isWarrior ? WARRIOR_ATTACK_COOLDOWN : ATTACK_COOLDOWN;
       this._attackJustStarted = true;
     }
 
