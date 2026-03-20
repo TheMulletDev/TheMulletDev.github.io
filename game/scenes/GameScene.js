@@ -56,7 +56,7 @@ export class GameScene {
 
     // --- Enemies ---
     for (const e of enemies) {
-      e.update(dt, player); // always called — handles death/respawn timers when dead
+      e.update(dt, player, tilemap); // always called — handles death/respawn timers when dead
       if (!e.dead) {
         integrate(e, dt);
         tilemap.resolveEntity(e);

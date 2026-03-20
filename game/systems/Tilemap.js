@@ -38,6 +38,14 @@ export class Tilemap {
     }
   }
 
+  /** Returns true if the world-space point is inside any solid or one-way tile. */
+  hasSolidGround(wx, wy) {
+    const col = Math.floor(wx / TILE);
+    const row = Math.floor(wy / TILE);
+    if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return false;
+    return this.tiles[row * this.cols + col] !== 0;
+  }
+
   resolveEntity(entity) {
     entity.onGround = false;
 
