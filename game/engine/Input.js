@@ -56,7 +56,7 @@ export class Input {
         if (y > btnY - btnH && x > rightX && x < rightX + btnW) this.virtual.right = true;
       } else {
         // Right half = action buttons
-        const btnSize = Math.min(w, h) * 0.14;
+        const btnSize = Math.min(w, h) * 0.19;
         const pad = h * 0.04;
         const potionX = w - btnSize * 3 - pad * 3;
         const jumpX   = w - btnSize * 2 - pad * 2;
