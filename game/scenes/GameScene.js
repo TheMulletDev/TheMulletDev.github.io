@@ -1,10 +1,11 @@
 import { Camera }   from '../engine/Camera.js';
-import { integrate } from '../engine/Physics.js';
+import { integrate, overlaps } from '../engine/Physics.js';
 import { Tilemap, TILE } from '../systems/Tilemap.js';
-import { Combat }   from '../systems/Combat.js';
+import { Combat, FloatingText } from '../systems/Combat.js';
 import { Renderer } from '../systems/Renderer.js';
 import { Player }   from '../entities/Player.js';
 import { Enemy }    from '../entities/Enemy.js';
+import { Drop }     from '../entities/Drop.js';
 import { LEVEL1 }   from '../../assets/maps/level1.js';
 
 export class GameScene {
@@ -26,6 +27,9 @@ export class GameScene {
       canvas.width, canvas.height,
       this.tilemap.width, this.tilemap.height
     );
+
+    // Active drops in the world
+    this.drops = [];
 
     // Respawn timer
     this._deadTimer = 0;
@@ -65,6 +69,35 @@ export class GameScene {
     combat.resolveEnemyAttack(player, enemies);
     combat.update(dt);
 
+    // --- Drops: spawn from freshly killed enemies ---
+    for (const e of enemies) {
+      if (!e.pendingDrops.length) continue;
+      for (const d of e.pendingDrops) this.drops.push(new Drop(d.x, d.y, d.type, d));
+      e.pendingDrops = [];
+    }
+
+    // --- Drops: physics, pickup, despawn ---
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const d = this.drops[i];
+      d.life -= dt;
+      d.bobTimer += dt * 3;
+      if (d.life <= 0) { this.drops.splice(i, 1); continue; }
+      integrate(d, dt);
+      tilemap.resolveEntity(d);
+      d.x = Math.max(0, Math.min(d.x, tilemap.width - d.w));
+      if (!player.dead && overlaps(player, d)) {
+        if (player.pickupDrop(d)) this.drops.splice(i, 1);
+      }
+    }
+
+    // --- Drain player pending UI texts ---
+    for (const ft of player.pendingTexts) {
+      combat.floatingTexts.push(
+        new FloatingText(player.x + player.w / 2, player.y - 20, ft.text, ft.color)
+      );
+    }
+    player.pendingTexts = [];
+
     // --- Camera ---
     camera.follow(player);
 
@@ -77,16 +110,16 @@ export class GameScene {
 
   _respawn() {
     this._deadTimer = 0;
+    this.drops = [];
     const ps = LEVEL1.playerStart;
     this.player = new Player(ps.col * TILE, (ps.row - 1) * TILE);
-    // Respawn dead enemies
     this.enemies = LEVEL1.enemySpawns.map(s =>
       new Enemy(s.col * TILE, (s.row - 1) * TILE, s.type)
     );
   }
 
   draw() {
-    const { canvas, camera, tilemap, player, enemies, combat, renderer } = this;
+    const { canvas, camera, tilemap, player, enemies, drops, combat, renderer } = this;
     const ctx = canvas.ctx;
 
     canvas.clear();
@@ -98,6 +131,9 @@ export class GameScene {
 
     // Enemies
     for (const e of enemies) renderer.drawEnemy(ctx, e);
+
+    // Drops (below player so they don't obscure combat)
+    renderer.drawDrops(ctx, drops);
 
     // Player
     renderer.drawPlayer(ctx, player);
