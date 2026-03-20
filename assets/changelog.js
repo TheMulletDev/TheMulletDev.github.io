@@ -6,6 +6,21 @@
  */
 export const CHANGELOG = [
   {
+    version: '0.5',
+    date: '2026-03-20',
+    changes: [
+      'World progression system — 3 worlds to conquer',
+      'Climb to the top floor and walk into the portal to advance',
+      'World 2: Ellinia Forest — night sky, arcane platforms,',
+      '  purple slimes, dark mushrooms (1.8× enemy strength)',
+      'World 3: Perion Ruins — volcanic haze, stone bridges,',
+      '  fire slimes, lava mushrooms (3.2× enemy strength)',
+      'Each world has a unique tile palette, background, and enemy skins',
+      'Stats and gear carry over between worlds; death sends you back',
+      '  to World 1',
+    ],
+  },
+  {
     version: '0.4',
     date: '2026-03-20',
     changes: [
