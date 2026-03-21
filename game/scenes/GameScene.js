@@ -7,8 +7,9 @@ import { Player, WEAPONS }   from '../entities/Player.js';
 import { Enemy }    from '../entities/Enemy.js';
 import { Drop }        from '../entities/Drop.js';
 import { Projectile }  from '../entities/Projectile.js';
-import { LEVEL1 }     from '../../assets/maps/level1.js';
-import { TOWN }       from '../../assets/maps/town.js';
+import { LEVEL1 }        from '../../assets/maps/level1.js';
+import { generateLevel }  from '../../assets/maps/generator.js';
+import { TOWN }           from '../../assets/maps/town.js';
 import { WORLDS }     from '../../assets/worlds.js';
 import { CHANGELOG }  from '../../assets/changelog.js';
 import { CLASSES }    from '../assets/classes.js';
@@ -30,9 +31,11 @@ export class GameScene {
     this.renderer = new Renderer();
 
     // Both tilemaps pre-built; this.tilemap always points to the active one
-    this._tilemapLevel1 = new Tilemap(LEVEL1);
-    this._tilemapTown   = new Tilemap(TOWN);
-    this.tilemap        = this._tilemapLevel1;
+    this._currentLevelData = LEVEL1;       // replaced each Tower entry
+    this._runCount         = 0;
+    this._tilemapLevel1    = new Tilemap(LEVEL1);
+    this._tilemapTown      = new Tilemap(TOWN);
+    this.tilemap           = this._tilemapLevel1;
 
     // State machine:  'classSelect' | 'town' | 'playing'
     this._state     = 'classSelect';
@@ -297,9 +300,12 @@ export class GameScene {
     this.camera.y      = 0;
   }
 
-  /** Player enters a town portal → load the matching combat map. */
+  /** Player enters a town portal → generate and load a fresh combat map. */
   _enterCombatFromPortal(portalId) {
     if (portalId !== 'tower') return;   // only The Tower is implemented
+    this._runCount++;
+    this._currentLevelData = generateLevel((Date.now() >>> 0) ^ (this._runCount * 0x9e3779b9));
+    this._tilemapLevel1    = new Tilemap(this._currentLevelData);
     this._switchToMap(this._tilemapLevel1);
     this._worldIdx        = 0;
     this._worldTransition = null;
@@ -307,7 +313,7 @@ export class GameScene {
     this.projectiles      = [];
     this.lightningEffects = [];
     this.enemies          = this._spawnEnemies(WORLDS[0]);
-    const ps = LEVEL1.playerStart;
+    const ps = this._currentLevelData.playerStart;
     this.player.x  = ps.col * TILE;
     this.player.y  = (ps.row - 1) * TILE;
     this.player.vx = 0;
@@ -367,7 +373,7 @@ export class GameScene {
   /** Spawn enemies for the given world, applying stat multipliers and skins. */
   _spawnEnemies(world) {
     const { enemyMult, enemySkin } = world;
-    return LEVEL1.enemySpawns.map(s => {
+    return this._currentLevelData.enemySpawns.map(s => {
       const e = new Enemy(s.col * TILE, (s.row - 1) * TILE, s.type);
       e.hp          = e.maxHp = Math.round(e.maxHp * enemyMult.hp);
       e.dmg         = Math.round(e.dmg   * enemyMult.dmg);
@@ -426,7 +432,7 @@ export class GameScene {
     this._worldIdx = this._worldTransition.targetIdx;
     const world = WORLDS[this._worldIdx];
     // Move player back to spawn without resetting stats/gear/level
-    const ps = LEVEL1.playerStart;
+    const ps = this._currentLevelData.playerStart;
     this.player.x  = ps.col * TILE;
     this.player.y  = (ps.row - 1) * TILE;
     this.player.vx = 0;
@@ -593,7 +599,7 @@ export class GameScene {
 
     // --- Portal: advance to next world ---
     if (!player.dead && !this._worldTransition) {
-      const portal = LEVEL1.portal;
+      const portal = this._currentLevelData.portal;
       if (portal && overlaps(player, portal)) {
         const targetIdx = (this._worldIdx + 1) % WORLDS.length;
         this._worldTransition = { phase: 'fadeOut', t: 0, duration: 1.2, targetIdx };
@@ -768,11 +774,11 @@ export class GameScene {
     camera.apply(ctx);
     renderer.drawBackground(ctx, camera, tilemap.width, tilemap.height, world);
     tilemap.draw(ctx, camera, world.tiles);
-    renderer.drawDecorations(ctx, LEVEL1.decorations);
+    renderer.drawDecorations(ctx, this._currentLevelData.decorations);
 
     // Portal
-    if (LEVEL1.portal && !this._worldTransition) {
-      const { x, y, w, h } = LEVEL1.portal;
+    if (this._currentLevelData.portal && !this._worldTransition) {
+      const { x, y, w, h } = this._currentLevelData.portal;
       renderer.drawPortal(ctx, x, y, w, h, world.portalColor);
     }
 

@@ -6,6 +6,17 @@
  */
 export const CHANGELOG = [
   {
+    version: '0.8',
+    date: '2026-03-21',
+    changes: [
+      'Procedurally generated Tower levels — every run is a unique layout',
+      'Seeded RNG ensures step platforms always bridge each floor gap',
+      'Enemy count, types, and positions vary with each generated map',
+      'Portal location adapts to the widest top-floor platform each run',
+      'Decorations (flowers, barrels, stumps, etc.) are randomly scattered',
+    ],
+  },
+  {
     version: '0.7',
     date: '2026-03-21',
     changes: [
