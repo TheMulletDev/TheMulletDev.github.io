@@ -9,10 +9,12 @@ import { Drop }        from '../entities/Drop.js';
 import { Projectile }  from '../entities/Projectile.js';
 import { LEVEL1 }        from '../../assets/maps/level1.js';
 import { generateLevel }  from '../../assets/maps/generator.js';
+import { BOSS_ARENA }     from '../../assets/maps/bossArena.js';
 import { TOWN }           from '../../assets/maps/town.js';
 import { WORLDS }     from '../../assets/worlds.js';
 import { CHANGELOG }  from '../../assets/changelog.js';
 import { CLASSES }    from '../assets/classes.js';
+import { Boss, BOSS_SHIELD_LEVEL } from '../entities/Boss.js';
 
 // Items available in the Mulletville shop
 const SHOP_ITEMS = [
@@ -59,6 +61,12 @@ export class GameScene {
 
     // Active drops in the world
     this.drops = [];
+
+    // Boss fight state
+    this._boss            = null;   // Boss instance, or null when not in boss fight
+    this._bossProjectiles = [];     // { x, y, vx, vy, damage, life }  boulder shots
+    this._bossMode        = false;  // true while in the boss arena
+    this._bossMeleeCd     = 0;      // cooldown to avoid stacking boss melee hits
 
     // Respawn timer
     this._deadTimer = 0;
@@ -313,6 +321,9 @@ export class GameScene {
     this.projectiles      = [];
     this.lightningEffects = [];
     this.enemies          = this._spawnEnemies(WORLDS[0]);
+    this._boss            = null;
+    this._bossProjectiles = [];
+    this._bossMode        = false;
     const ps = this._currentLevelData.playerStart;
     this.player.x  = ps.col * TILE;
     this.player.y  = (ps.row - 1) * TILE;
@@ -330,6 +341,9 @@ export class GameScene {
     this.projectiles      = [];
     this.lightningEffects = [];
     this.enemies          = [];
+    this._boss            = null;
+    this._bossProjectiles = [];
+    this._bossMode        = false;
     this._shopOpen        = false;
     const ps = TOWN.playerStart;
     this.player.x  = ps.col * TILE;
@@ -386,11 +400,178 @@ export class GameScene {
     });
   }
 
-  /** Find nearest enemy and fire an instant lightning bolt at it. */
+  // ── Boss fight helpers ────────────────────────────────────────────────────
+
+  /** Floating damage number above the boss (colour-coded for shield state). */
+  _spawnBossDmgText(boss, dmg, shielded) {
+    const color = shielded ? '#888888' : '#ff4';
+    const text  = shielded ? `-${dmg} ⬡` : `-${dmg}`;
+    this.combat.floatingTexts.push(
+      new FloatingText(boss.x + boss.w / 2, boss.y - 12, text, color)
+    );
+  }
+
+  /**
+   * All boss AI / physics / combat resolution for one frame.
+   * Called from the main update() loop when this._boss is set.
+   */
+  _updateBoss(dt, player) {
+    const boss = this._boss;
+
+    // ── Update boss AI ───────────────────────────────────────────────────────
+    boss.shieldActive = player.level < BOSS_SHIELD_LEVEL;
+    boss.update(dt, player);
+
+    if (!boss.dead) {
+      // Physics (same pipeline as enemies)
+      integrate(boss, dt);
+      this.tilemap.resolveEntity(boss);
+      // Keep boss inside arena walls
+      boss.x = Math.max(0, Math.min(boss.x, this.tilemap.width - boss.w));
+    }
+
+    // ── Drain pending minion spawns ──────────────────────────────────────────
+    if (boss.pendingMinions.length) {
+      const world = WORLDS[2]; // Perion stats for minions
+      for (const s of boss.pendingMinions) {
+        const e = new Enemy(s.x, s.y, s.type);
+        e.hp = e.maxHp = Math.round(e.maxHp * world.enemyMult.hp);
+        e.dmg         = Math.round(e.dmg         * world.enemyMult.dmg);
+        e.exp         = Math.round(e.exp         * world.enemyMult.exp);
+        e.patrolSpeed = e.patrolSpeed * world.enemyMult.spd;
+        e._baseStats  = { hp: e.hp, maxHp: e.maxHp, dmg: e.dmg, exp: e.exp, patrolSpeed: e.patrolSpeed };
+        e.skin        = world.enemySkin?.slime ?? null;
+        e._bossMinion = true;
+        this.enemies.push(e);
+      }
+      boss.pendingMinions = [];
+    }
+
+    // ── Drain pending boulder projectiles ────────────────────────────────────
+    if (boss.pendingProjectiles.length) {
+      for (const bp of boss.pendingProjectiles) this._bossProjectiles.push(bp);
+      boss.pendingProjectiles = [];
+    }
+
+    // ── Update boulder projectiles ───────────────────────────────────────────
+    for (let i = this._bossProjectiles.length - 1; i >= 0; i--) {
+      const bp = this._bossProjectiles[i];
+      bp.life -= dt;
+      bp.x    += bp.vx * dt;
+      bp.y    += bp.vy * dt;
+      bp.vy   += 900 * dt; // gentle gravity so boulders arc downward
+      if (bp.life <= 0 || bp.y > this.tilemap.height + 100) {
+        this._bossProjectiles.splice(i, 1);
+        continue;
+      }
+      // Player collision
+      const bpRect = { x: bp.x, y: bp.y, w: 24, h: 24 };
+      if (!player.dead && overlaps(player, bpRect)) {
+        player.takeDamage(bp.damage);
+        if (player.hp > 0) {
+          this.combat.floatingTexts.push(
+            new FloatingText(player.x + player.w / 2, player.y - 20, `-${bp.damage}`, '#f44')
+          );
+        }
+        this._bossProjectiles.splice(i, 1);
+      }
+    }
+
+    // ── Boss melee damage to player ──────────────────────────────────────────
+    this._bossMeleeCd = Math.max(0, this._bossMeleeCd - dt);
+    if (!boss.dead && !player.dead && this._bossMeleeCd <= 0) {
+      const isAttacking = boss._state === 'attack';
+      const isCharging  = boss._state === 'charge' && boss._chargePhase === 'dash';
+      if ((isAttacking || isCharging) && overlaps(player, boss)) {
+        const dmg = isCharging ? boss.chargeDmg : boss.meleeDmg;
+        player.takeDamage(dmg);
+        if (player.hp > 0) {
+          this.combat.floatingTexts.push(
+            new FloatingText(player.x + player.w / 2, player.y - 20, `-${dmg}`, '#f44')
+          );
+        }
+        this._bossMeleeCd = 0.9; // prevent rapid stacking
+      }
+    }
+
+    // ── Shockwave damage to player (slam impact) ─────────────────────────────
+    if (boss.shockwaveActive && !player.dead) {
+      const dx = Math.abs((player.x + player.w / 2) - (boss.x + boss.w / 2));
+      if (dx < 340 && player.onGround && this._bossMeleeCd <= 0) {
+        player.takeDamage(boss.shockwaveDamage);
+        if (player.hp > 0) {
+          this.combat.floatingTexts.push(
+            new FloatingText(player.x + player.w / 2, player.y - 20,
+              `-${boss.shockwaveDamage}`, '#f44')
+          );
+        }
+        this._bossMeleeCd = 0.6;
+      }
+    }
+
+    // ── Player attacks boss ──────────────────────────────────────────────────
+    if (!boss.dead) {
+      const cls = player.playerClass?.id;
+
+      // Warrior melee
+      if (!cls || cls === 'warrior') {
+        const atk = player.getAttackBox();
+        if (atk && overlaps(atk, boss)) {
+          const raw = player.attackDamage;
+          const dmg = boss.shieldActive ? Math.max(1, Math.round(raw * 0.10)) : raw;
+          boss.takeDamage(dmg);
+          this._spawnBossDmgText(boss, dmg, boss.shieldActive);
+        }
+      }
+
+      // Projectile hits (thief star / bowman arrow)
+      for (let i = this.projectiles.length - 1; i >= 0; i--) {
+        const proj = this.projectiles[i];
+        if (!proj.hit && overlaps(proj, boss)) {
+          proj.hit = true;
+          const raw = proj.damage ?? player.attackDamage;
+          const dmg = boss.shieldActive ? Math.max(1, Math.round(raw * 0.10)) : raw;
+          boss.takeDamage(dmg);
+          this._spawnBossDmgText(boss, dmg, boss.shieldActive);
+        }
+      }
+    }
+
+    // ── Boss death: spawn rewards and portal ─────────────────────────────────
+    if (boss.dead && boss.deadTimer > 2.2 && !this._currentLevelData.portal) {
+      // Grant massive XP directly
+      player.gainExp(600);
+      this.combat.floatingTexts.push(
+        new FloatingText(boss.x + boss.w / 2, boss.y - 40, '+600 EXP', '#4ef')
+      );
+
+      // Drop a gold pile and magic wand near boss centre
+      const bx = boss.x + boss.w / 2 - 16;
+      const by = boss.y;
+      this.drops.push(new Drop(bx,      by, 'coin',   { valueMin: 500, valueMax: 500 }));
+      this.drops.push(new Drop(bx + 40, by, 'weapon', { weaponId: 'magic_wand' }));
+
+      // Kill all boss-summoned minions
+      for (const e of this.enemies) {
+        if (e._bossMinion) { e.hp = 0; e.dead = true; }
+      }
+
+      // Activate escape portal (centred in arena, at ground level)
+      this._currentLevelData.portal = {
+        x: 11 * TILE, y: 7 * TILE, w: 6 * TILE, h: 4 * TILE,
+      };
+    }
+  }
+
+  /** Find nearest enemy (or boss) and fire an instant lightning bolt at it. */
   _spawnLightning(player, enemies) {
     const RANGE = 340;
     let nearest = null, nearestDist = Infinity;
-    for (const e of enemies) {
+    // Include boss as a valid target
+    const targets = (this._boss && !this._boss.dead)
+      ? [...enemies, this._boss]
+      : enemies;
+    for (const e of targets) {
       if (e.dead) continue;
       const dx = (e.x + e.w / 2) - (player.x + player.w / 2);
       const dy = (e.y + e.h / 2) - (player.y + player.h / 2);
@@ -409,7 +590,17 @@ export class GameScene {
       damage: player.attackDamage,
     };
     this.lightningEffects.push(bolt);
-    if (nearest) this.combat.resolveLightning(bolt, player);
+    if (nearest === this._boss) {
+      // Boss is the lightning target — apply shield-adjusted damage directly
+      if (nearest && !nearest.dead) {
+        const raw = bolt.damage;
+        const dmg = nearest.shieldActive ? Math.max(1, Math.round(raw * 0.10)) : raw;
+        nearest.takeDamage(dmg);
+        this._spawnBossDmgText(nearest, dmg, nearest.shieldActive);
+      }
+    } else if (nearest) {
+      this.combat.resolveLightning(bolt, player);
+    }
   }
 
   _makeLightningPath(x1, y1, x2, y2) {
@@ -429,6 +620,12 @@ export class GameScene {
 
   /** Advance to the next world after the fade-out completes. */
   _loadNextWorld() {
+    // Boss fight (targetIdx === -1) — handled separately
+    if (this._worldTransition.targetIdx === -1) {
+      this._enterBossArena();
+      return;
+    }
+
     this._worldIdx = this._worldTransition.targetIdx;
     const world = WORLDS[this._worldIdx];
     // Move player back to spawn without resetting stats/gear/level
@@ -441,6 +638,38 @@ export class GameScene {
     this.projectiles      = [];
     this.lightningEffects = [];
     this.enemies          = this._spawnEnemies(world);
+  }
+
+  /** Load the boss arena and spawn the boss. */
+  _enterBossArena() {
+    // Clone the arena data so we can mutate portal without touching the original
+    this._currentLevelData = {
+      ...BOSS_ARENA,
+      portal:       null,        // portal spawns only after boss dies
+      decorations:  BOSS_ARENA.decorations,
+      enemySpawns:  [],
+    };
+    this._tilemapLevel1 = new Tilemap(this._currentLevelData);
+    this._switchToMap(this._tilemapLevel1);
+    this._worldIdx = 2;           // reuse Perion palette for rendering
+    this._bossMode = true;
+
+    this.drops            = [];
+    this.projectiles      = [];
+    this.lightningEffects = [];
+    this.enemies          = [];
+    this._bossProjectiles = [];
+    this._bossMeleeCd     = 0;
+
+    // Spawn boss at centre-arena ground level
+    this._boss = new Boss(12 * TILE, 8 * TILE);
+
+    // Move player to arena start
+    const ps = this._currentLevelData.playerStart;
+    this.player.x  = ps.col * TILE;
+    this.player.y  = (ps.row - 1) * TILE;
+    this.player.vx = 0;
+    this.player.vy = 0;
   }
 
   update(dt) {
@@ -513,6 +742,11 @@ export class GameScene {
         tilemap.resolveEntity(e);
         e.x = Math.max(0, Math.min(e.x, tilemap.width - e.w));
       }
+    }
+
+    // --- Boss update (physics, AI, combat) ---
+    if (this._boss) {
+      this._updateBoss(dt, player);
     }
 
     // --- Combat ---
@@ -597,12 +831,23 @@ export class GameScene {
     // --- Camera ---
     camera.follow(player);
 
-    // --- Portal: advance to next world ---
+    // --- Portal: advance to next world (or exit boss arena) ---
     if (!player.dead && !this._worldTransition) {
       const portal = this._currentLevelData.portal;
       if (portal && overlaps(player, portal)) {
-        const targetIdx = (this._worldIdx + 1) % WORLDS.length;
-        this._worldTransition = { phase: 'fadeOut', t: 0, duration: 1.2, targetIdx };
+        if (this._bossMode) {
+          // Boss arena exit → return to town
+          this._bossMode = false;
+          this._boss     = null;
+          this._bossProjectiles = [];
+          this._returnToTown();
+        } else if (this._worldIdx === WORLDS.length - 1) {
+          // Completed last world → boss fight!
+          this._worldTransition = { phase: 'fadeOut', t: 0, duration: 1.2, targetIdx: -1 };
+        } else {
+          const targetIdx = this._worldIdx + 1;
+          this._worldTransition = { phase: 'fadeOut', t: 0, duration: 1.2, targetIdx };
+        }
       }
     }
 
@@ -691,6 +936,9 @@ export class GameScene {
     this.lightningEffects = [];
     this.player           = null;
     this.enemies          = [];
+    this._boss            = null;
+    this._bossProjectiles = [];
+    this._bossMode        = false;
     this._shopOpen        = false;
     this._switchToMap(this._tilemapLevel1); // reset for next run
     // Return to class select; _classIdx stays so the last-used class is pre-highlighted
@@ -785,6 +1033,13 @@ export class GameScene {
     // Enemies
     for (const e of enemies) renderer.drawEnemy(ctx, e);
 
+    // Boss (drawn with enemies, behind the player)
+    if (this._boss) {
+      renderer.drawBossShockwave(ctx, this._boss);
+      renderer.drawBossProjectiles(ctx, this._bossProjectiles);
+      renderer.drawBoss(ctx, this._boss);
+    }
+
     // Drops (below player so they don't obscure combat)
     renderer.drawDrops(ctx, drops);
 
@@ -808,13 +1063,22 @@ export class GameScene {
     renderer.drawMobileControls(ctx, canvas.width, canvas.height);
     renderer.drawReturnToTownButton(ctx, canvas.width, canvas.height);
     renderer.drawChangelogButton(ctx, canvas.width, canvas.height, this._changelogOpen);
+
+    // Boss HUD (overlaid on top of normal HUD)
+    if (this._boss) {
+      renderer.drawBossHPBar(ctx, this._boss, canvas.width, canvas.height);
+      renderer.drawBossPhaseMessage(ctx, this._boss.phaseMessage, canvas.width, canvas.height);
+    }
     if (this._changelogOpen) {
       renderer.drawChangelogOverlay(ctx, canvas.width, canvas.height, CHANGELOG, this._changelogScroll);
     }
 
     // World transition overlay
     if (this._worldTransition) {
-      const targetWorld = WORLDS[this._worldTransition.targetIdx];
+      // targetIdx === -1 means boss intro (pass null so renderer shows boss splash)
+      const targetWorld = this._worldTransition.targetIdx >= 0
+        ? WORLDS[this._worldTransition.targetIdx]
+        : null;
       renderer.drawWorldTransition(ctx, canvas.width, canvas.height, this._worldTransition, targetWorld);
     }
 
