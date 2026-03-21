@@ -1,4 +1,5 @@
 import { Entity } from './Entity.js';
+import { GRAVITY } from '../engine/Physics.js';
 
 // Weapon definitions — id must match the weaponId used in Enemy drop tables.
 export const WEAPONS = {
@@ -9,6 +10,8 @@ export const WEAPONS = {
 const WALK_SPEED      = 220;
 const JUMP_FORCE      = -620;
 const JUMP_FORCE_2    = -460; // double-jump is slightly shorter
+const JUMP_CUT_MULT   = 0.40; // vy multiplier when jump released early (short hop)
+const FALL_GRAV_MULT  = 1.80; // extra gravity when falling — snappy MapleStory descent
 const ATTACK_DURATION = 0.25; // seconds
 const ATTACK_COOLDOWN  = 0.3;
 const WARRIOR_ATTACK_DURATION = 0.45; // slower, heavier swing
@@ -54,6 +57,7 @@ export class Player extends Entity {
     this.coyoteTimer     = 0;
     this.jumpsLeft       = 1;  // air jumps remaining (reset on landing)
     this._prevJump       = false; // edge-detection: was jump held last frame
+    this._prevJumpHeld   = false; // jump-cut: tracks held state across frames
 
     // Animation state
     this.state = 'idle'; // idle | walk | jump | fall | attack
@@ -96,7 +100,18 @@ export class Player extends Entity {
     const jumpJustPressed = jumpHeld && !this._prevJump;
     this._prevJump = jumpHeld;
 
-    if (jumpJustPressed) this.jumpBufferTimer = 0.12;
+    if (jumpJustPressed) this.jumpBufferTimer = 0.16;
+
+    // Jump cut: release jump while rising → short hop
+    if (!jumpHeld && this._prevJumpHeld && this.vy < 0) {
+      this.vy *= JUMP_CUT_MULT;
+    }
+    this._prevJumpHeld = jumpHeld;
+
+    // Fall gravity: extra downward pull when descending — no float at apex
+    if (!this.onGround && this.vy > 0) {
+      this.vy += GRAVITY * (FALL_GRAV_MULT - 1) * dt;
+    }
 
     // First jump — ground or coyote window
     if (this.jumpBufferTimer > 0 && this.coyoteTimer > 0) {
@@ -138,7 +153,7 @@ export class Player extends Entity {
   /** Call AFTER physics resolves onGround */
   postPhysics() {
     if (this.onGround) {
-      this.coyoteTimer = 0.1;
+      this.coyoteTimer = 0.14;
       this.jumpsLeft   = 1; // restore air jump on landing
     }
   }
