@@ -199,14 +199,28 @@ export class GameScene {
     }
   }
 
-  /** Hit-test clicks in the town (shop overlay). */
+  /** Hit-test clicks in the town (shop overlay + NPC tap to open). */
   _hitTestTown(mx, my) {
     const { canvas, renderer } = this;
 
-    if (!this._shopOpen) return;
+    // ── Shop closed: check tap on NPC (world-space, with generous hit area) ──
+    if (!this._shopOpen) {
+      const npc    = TOWN.shopNPC;
+      const worldX = mx + this.camera.x;
+      const worldY = my + this.camera.y;
+      const pad    = 28; // extra finger-friendly padding
+      if (worldX >= npc.x - pad && worldX <= npc.x + npc.w + pad &&
+          worldY >= npc.y - pad && worldY <= npc.y + npc.h + pad) {
+        this._shopOpen = true;
+        this._shopIdx  = 0;
+      }
+      return;
+    }
+
+    // ── Shop open ────────────────────────────────────────────────────────────
 
     // Close [X] button
-    const p    = renderer.shopPanelRect(canvas.width, canvas.height);
+    const p     = renderer.shopPanelRect(canvas.width, canvas.height);
     const xBtnX = p.x + p.w - 28;
     const xBtnY = p.y + 8;
     const xBtnS = 24;
@@ -221,7 +235,7 @@ export class GameScene {
       return;
     }
 
-    // Item rows
+    // Item rows — first tap selects, second tap buys
     const rects = renderer.shopItemRects(canvas.width, canvas.height, SHOP_ITEMS.length);
     for (let i = 0; i < rects.length; i++) {
       const r = rects[i];
