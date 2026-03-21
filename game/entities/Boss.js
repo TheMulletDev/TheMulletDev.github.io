@@ -111,7 +111,8 @@ export class Boss extends Entity {
     this.hp        = Math.max(0, this.hp - amount);
     this.hurtTimer = 0.12;
     if (this.hp <= 0) {
-      this.hp = 0;
+      this.hp   = 0;
+      this.dead = true;
       this._setState('dead');
     }
   }
