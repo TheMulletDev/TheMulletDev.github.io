@@ -3,33 +3,47 @@ import { integrate, overlaps } from '../engine/Physics.js';
 import { Tilemap, TILE } from '../systems/Tilemap.js';
 import { Combat, FloatingText } from '../systems/Combat.js';
 import { Renderer } from '../systems/Renderer.js';
-import { Player }   from '../entities/Player.js';
+import { Player, WEAPONS }   from '../entities/Player.js';
 import { Enemy }    from '../entities/Enemy.js';
 import { Drop }        from '../entities/Drop.js';
 import { Projectile }  from '../entities/Projectile.js';
 import { LEVEL1 }     from '../../assets/maps/level1.js';
+import { TOWN }       from '../../assets/maps/town.js';
 import { WORLDS }     from '../../assets/worlds.js';
 import { CHANGELOG }  from '../../assets/changelog.js';
 import { CLASSES }    from '../assets/classes.js';
+
+// Items available in the Mulletville shop
+const SHOP_ITEMS = [
+  { id: 'potion',     name: 'Health Potion', cost:  20, desc: 'Restores HP  (+1 potion)',   icon: '#f0abfc' },
+  { id: 'maxhp',      name: 'HP Crystal',    cost:  80, desc: 'Max HP +50',                 icon: '#ff5555' },
+  { id: 'atk',        name: 'Power Scroll',  cost: 120, desc: 'Attack +15',                 icon: '#ffd700' },
+  { id: 'iron_sword', name: 'Iron Sword',    cost: 200, desc: 'Equip: +20 damage bonus',    icon: '#e8c84a' },
+  { id: 'magic_wand', name: 'Magic Wand',    cost: 300, desc: 'Equip: +45 damage bonus',    icon: '#c084fc' },
+];
 
 export class GameScene {
   constructor(canvas, input) {
     this.canvas   = canvas;
     this.input    = input;
-    this.tilemap  = new Tilemap(LEVEL1);
     this.combat   = new Combat();
     this.renderer = new Renderer();
 
-    // Class selection state (shown before game starts and after death)
-    this._state     = 'classSelect';  // 'classSelect' | 'playing'
-    this._classIdx  = 0;              // currently highlighted class index
+    // Both tilemaps pre-built; this.tilemap always points to the active one
+    this._tilemapLevel1 = new Tilemap(LEVEL1);
+    this._tilemapTown   = new Tilemap(TOWN);
+    this.tilemap        = this._tilemapLevel1;
+
+    // State machine:  'classSelect' | 'town' | 'playing'
+    this._state     = 'classSelect';
+    this._classIdx  = 0;
     this._prevCsLeft    = false;
     this._prevCsRight   = false;
     this._prevCsConfirm = false;
 
     // World progression state
-    this._worldIdx        = 0;           // index into WORLDS[]
-    this._worldTransition = null;        // { phase, t, duration, targetIdx }
+    this._worldIdx        = 0;
+    this._worldTransition = null;
 
     // Player and enemies — created when class is selected
     this.player  = null;
@@ -46,6 +60,16 @@ export class GameScene {
     // Respawn timer
     this._deadTimer = 0;
 
+    // Town / shop state
+    this._shopOpen        = false;
+    this._shopIdx         = 0;
+    this._prevInteract    = false;   // edge-detect for E key in town
+    this._prevShopUp      = false;
+    this._prevShopDown    = false;
+    this._prevShopConfirm = false;
+    this._prevShopClose   = false;
+    this._nearNPC         = false;
+
     // Changelog overlay state
     this._changelogOpen        = false;
     this._changelogScroll      = 0;
@@ -53,17 +77,19 @@ export class GameScene {
     this._touchScrollStart     = 0;
     this._touchMoved           = false;
 
-    // Click — handle class select or toggle changelog
+    // Click — dispatch to the active state's hit-tester
     this._handleClick = (e) => {
-      const r   = canvas.el.getBoundingClientRect();
+      const r      = canvas.el.getBoundingClientRect();
       const scaleX = canvas.width  / r.width;
       const scaleY = canvas.height / r.height;
-      const mx  = (e.clientX - r.left) * scaleX;
-      const my  = (e.clientY - r.top)  * scaleY;
+      const mx     = (e.clientX - r.left) * scaleX;
+      const my     = (e.clientY - r.top)  * scaleY;
       if (this._state === 'classSelect') {
         this._hitTestClassSelect(mx, my);
+      } else if (this._state === 'town') {
+        this._hitTestTown(mx, my);
       } else {
-        this._hitTestChangelog(mx, my);
+        this._hitTestPlayingHUD(mx, my);
       }
     };
     canvas.el.addEventListener('click', this._handleClick);
@@ -94,16 +120,18 @@ export class GameScene {
     // Touch end — treat as tap only if finger barely moved
     this._handleTouchEnd = (e) => {
       if (this._touchMoved) { this._touchMoved = false; return; }
-      const r     = canvas.el.getBoundingClientRect();
+      const r      = canvas.el.getBoundingClientRect();
       const scaleX = canvas.width  / r.width;
       const scaleY = canvas.height / r.height;
-      const t     = e.changedTouches[0];
-      const mx    = (t.clientX - r.left) * scaleX;
-      const my    = (t.clientY - r.top)  * scaleY;
+      const t      = e.changedTouches[0];
+      const mx     = (t.clientX - r.left) * scaleX;
+      const my     = (t.clientY - r.top)  * scaleY;
       if (this._state === 'classSelect') {
         this._hitTestClassSelect(mx, my);
+      } else if (this._state === 'town') {
+        this._hitTestTown(mx, my);
       } else {
-        this._hitTestChangelog(mx, my);
+        this._hitTestPlayingHUD(mx, my);
       }
     };
     canvas.el.addEventListener('touchend', this._handleTouchEnd, { passive: true });
@@ -132,8 +160,20 @@ export class GameScene {
   }
 
   /** Button / overlay hit-testing used by both click and touch handlers. */
-  _hitTestChangelog(mx, my) {
+  /** Hit-test clicks on the playing-state HUD (changelog + return-to-town). */
+  _hitTestPlayingHUD(mx, my) {
     const { canvas, renderer } = this;
+
+    // Return-to-town button (only when not dead)
+    if (this.player && !this.player.dead && !this._changelogOpen) {
+      const townBtn = renderer.returnToTownBtnRect(canvas.width, canvas.height);
+      if (mx >= townBtn.x && mx <= townBtn.x + townBtn.w &&
+          my >= townBtn.y && my <= townBtn.y + townBtn.h) {
+        this._returnToTown();
+        return;
+      }
+    }
+
     const btnRect = renderer.changelogButtonRect(canvas.width, canvas.height);
 
     if (!this._changelogOpen) {
@@ -154,9 +194,45 @@ export class GameScene {
       this._changelogOpen = false;
       return;
     }
-    // Click outside panel closes it
     if (mx < panel.x || mx > panel.x + panel.w || my < panel.y || my > panel.y + panel.h) {
       this._changelogOpen = false;
+    }
+  }
+
+  /** Hit-test clicks in the town (shop overlay). */
+  _hitTestTown(mx, my) {
+    const { canvas, renderer } = this;
+
+    if (!this._shopOpen) return;
+
+    // Close [X] button
+    const p    = renderer.shopPanelRect(canvas.width, canvas.height);
+    const xBtnX = p.x + p.w - 28;
+    const xBtnY = p.y + 8;
+    const xBtnS = 24;
+    if (mx >= xBtnX && mx <= xBtnX + xBtnS && my >= xBtnY && my <= xBtnY + xBtnS) {
+      this._shopOpen = false;
+      return;
+    }
+
+    // Click outside panel closes it
+    if (mx < p.x || mx > p.x + p.w || my < p.y || my > p.y + p.h) {
+      this._shopOpen = false;
+      return;
+    }
+
+    // Item rows
+    const rects = renderer.shopItemRects(canvas.width, canvas.height, SHOP_ITEMS.length);
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      if (mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h) {
+        if (i === this._shopIdx) {
+          this._buyShopItem(SHOP_ITEMS[i]);
+        } else {
+          this._shopIdx = i;
+        }
+        return;
+      }
     }
   }
 
@@ -181,18 +257,97 @@ export class GameScene {
     }
   }
 
-  /** Begin the game with the chosen class. */
+  /** Begin the game with the chosen class — spawn the player in Mulletville. */
   _startGame(cls) {
-    this._state           = 'playing';
     this._worldIdx        = 0;
     this._worldTransition = null;
     this.drops            = [];
     this.projectiles      = [];
     this.lightningEffects = [];
+    this.enemies          = [];
     this._deadTimer       = 0;
-    const ps     = LEVEL1.playerStart;
+    this._shopOpen        = false;
+    this._shopIdx         = 0;
+    this._switchToMap(this._tilemapTown);
+    const ps     = TOWN.playerStart;
     this.player  = new Player(ps.col * TILE, (ps.row - 1) * TILE, cls);
-    this.enemies = this._spawnEnemies(WORLDS[0]);
+    this._state  = 'town';
+  }
+
+  /** Switch the active tilemap and update camera world bounds. */
+  _switchToMap(tm) {
+    this.tilemap       = tm;
+    this.camera.worldW = tm.width;
+    this.camera.worldH = tm.height;
+    this.camera.x      = 0;
+    this.camera.y      = 0;
+  }
+
+  /** Player enters a town portal → load the matching combat map. */
+  _enterCombatFromPortal(portalId) {
+    if (portalId !== 'tower') return;   // only The Tower is implemented
+    this._switchToMap(this._tilemapLevel1);
+    this._worldIdx        = 0;
+    this._worldTransition = null;
+    this.drops            = [];
+    this.projectiles      = [];
+    this.lightningEffects = [];
+    this.enemies          = this._spawnEnemies(WORLDS[0]);
+    const ps = LEVEL1.playerStart;
+    this.player.x  = ps.col * TILE;
+    this.player.y  = (ps.row - 1) * TILE;
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this._state = 'playing';
+  }
+
+  /** Return to Mulletville from combat (keeps stats / gold / level). */
+  _returnToTown() {
+    this._switchToMap(this._tilemapTown);
+    this._worldIdx        = 0;
+    this._worldTransition = null;
+    this.drops            = [];
+    this.projectiles      = [];
+    this.lightningEffects = [];
+    this.enemies          = [];
+    this._shopOpen        = false;
+    const ps = TOWN.playerStart;
+    this.player.x  = ps.col * TILE;
+    this.player.y  = (ps.row - 1) * TILE;
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.player.hp = Math.min(this.player.hp, this.player.maxHp);
+    this._state = 'town';
+  }
+
+  /** Attempt to purchase a shop item; returns true on success. */
+  _buyShopItem(item) {
+    const p = this.player;
+    if (!p || p.gold < item.cost) return false;
+
+    switch (item.id) {
+      case 'potion':
+        if (p.potions >= p.maxPotions) return false;
+        p.potions = Math.min(p.maxPotions, p.potions + 1);
+        break;
+      case 'maxhp':
+        p.maxHp += 50;
+        p.hp    += 50;
+        break;
+      case 'atk':
+        p.attackDamage += 15;
+        break;
+      case 'iron_sword':
+        p.weapon = WEAPONS['iron_sword'];
+        break;
+      case 'magic_wand':
+        p.weapon = WEAPONS['magic_wand'];
+        break;
+      default:
+        return false;
+    }
+    p.gold -= item.cost;
+    return true;
   }
 
   /** Spawn enemies for the given world, applying stat multipliers and skins. */
@@ -288,6 +443,12 @@ export class GameScene {
       this._prevCsLeft    = kLeft;
       this._prevCsRight   = kRight;
       this._prevCsConfirm = kConfirm;
+      return;
+    }
+
+    // ── Town update ───────────────────────────────────────────────────────────
+    if (this._state === 'town') {
+      this._updateTown(dt);
       return;
     }
 
@@ -432,6 +593,75 @@ export class GameScene {
     }
   }
 
+  // ── Town update ─────────────────────────────────────────────────────────────
+
+  _updateTown(dt) {
+    const { player, tilemap, camera } = this;
+
+    // ── Shop keyboard navigation (freezes player movement while open) ─────────
+    if (this._shopOpen) {
+      const kUp      = this.input.isJump() || this.input.keys['ArrowUp']   || this.input.keys['KeyW'];
+      const kDown    = this.input.keys['ArrowDown'] || this.input.keys['KeyS'];
+      const kConfirm = this.input.isUsePotion() || this.input.keys['Enter'];
+      const kClose   = this.input.keys['Escape'];
+
+      if (kUp    && !this._prevShopUp)      this._shopIdx = (this._shopIdx - 1 + SHOP_ITEMS.length) % SHOP_ITEMS.length;
+      if (kDown  && !this._prevShopDown)    this._shopIdx = (this._shopIdx + 1) % SHOP_ITEMS.length;
+      if (kConfirm && !this._prevShopConfirm) this._buyShopItem(SHOP_ITEMS[this._shopIdx]);
+      if (kClose && !this._prevShopClose)   this._shopOpen = false;
+
+      this._prevShopUp      = kUp;
+      this._prevShopDown    = kDown;
+      this._prevShopConfirm = kConfirm;
+      this._prevShopClose   = kClose;
+      this._prevInteract    = this.input.isUsePotion(); // keep in sync while shop is open
+      // Still update camera but skip movement
+      camera.follow(player);
+      return;
+    }
+
+    // ── Player movement (no combat in town) ───────────────────────────────────
+    player.update(dt, this.input);
+    player._attackJustStarted = false; // no projectiles / lightning in town
+    integrate(player, dt);
+    tilemap.resolveEntity(player);
+    player.postPhysics();
+    player.x = Math.max(0, Math.min(player.x, tilemap.width - player.w));
+    if (player.y > tilemap.height) {
+      // Fell off world edge — teleport back to spawn
+      const ps = TOWN.playerStart;
+      player.x = ps.col * TILE;
+      player.y = (ps.row - 1) * TILE;
+      player.vx = 0;
+      player.vy = 0;
+    }
+
+    // ── Camera ────────────────────────────────────────────────────────────────
+    camera.follow(player);
+
+    // ── Portal detection ─────────────────────────────────────────────────────
+    for (const portal of TOWN.portals) {
+      if (portal.disabled) continue;
+      if (overlaps(player, portal)) {
+        this._enterCombatFromPortal(portal.id);
+        return;
+      }
+    }
+
+    // ── NPC proximity ─────────────────────────────────────────────────────────
+    const npc      = TOWN.shopNPC;
+    const playerCx = player.x + player.w / 2;
+    const npcCx    = npc.x + npc.w / 2;
+    this._nearNPC  = Math.abs(playerCx - npcCx) < npc.interactRange;
+
+    const kInteract = this.input.isUsePotion();
+    if (this._nearNPC && kInteract && !this._prevInteract) {
+      this._shopOpen = !this._shopOpen;
+      if (this._shopOpen) this._shopIdx = 0;
+    }
+    this._prevInteract = kInteract;
+  }
+
   _respawn() {
     this._deadTimer       = 0;
     this._worldIdx        = 0;
@@ -441,11 +671,62 @@ export class GameScene {
     this.lightningEffects = [];
     this.player           = null;
     this.enemies          = [];
+    this._shopOpen        = false;
+    this._switchToMap(this._tilemapLevel1); // reset for next run
     // Return to class select; _classIdx stays so the last-used class is pre-highlighted
     this._state           = 'classSelect';
     this._prevCsLeft    = false;
     this._prevCsRight   = false;
     this._prevCsConfirm = false;
+  }
+
+  // ── Town draw ────────────────────────────────────────────────────────────────
+
+  _drawTown() {
+    const { canvas, renderer, camera, tilemap, player } = this;
+    const ctx   = canvas.ctx;
+    const world = WORLDS[0]; // town uses Henesys Outskirts palette
+
+    // World space
+    camera.apply(ctx);
+    renderer.drawBackground(ctx, camera, tilemap.width, tilemap.height, world);
+    tilemap.draw(ctx, camera, world.tiles);
+    renderer.drawDecorations(ctx, TOWN.decorations);
+
+    // Town portals (arch style)
+    for (const portal of TOWN.portals) {
+      renderer.drawTownPortal(ctx, portal);
+    }
+
+    // Shop NPC
+    const npc = TOWN.shopNPC;
+    renderer.drawShopNPC(ctx, npc.x, npc.y, this._nearNPC && !this._shopOpen);
+
+    // Player
+    renderer.drawPlayer(ctx, player);
+
+    camera.restore(ctx);
+
+    // HUD (shows HP, gold, potions etc.)
+    renderer.drawHUD(ctx, player, canvas.width, canvas.height);
+    renderer.drawMobileControls(ctx, canvas.width, canvas.height);
+
+    // Town label (screen space)
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = 'bold 14px monospace';
+    ctx.fillStyle    = '#c89a30';
+    ctx.shadowColor  = '#c89a30';
+    ctx.shadowBlur   = 8;
+    ctx.fillText('✦  MULLETVILLE  ✦', canvas.width / 2, 20);
+    ctx.shadowBlur   = 0;
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign    = 'left';
+
+    // Shop overlay
+    if (this._shopOpen) {
+      renderer.drawShopOverlay(ctx, canvas.width, canvas.height, SHOP_ITEMS, this._shopIdx, player.gold);
+    }
   }
 
   draw() {
@@ -457,6 +738,12 @@ export class GameScene {
     // ── Class selection screen ────────────────────────────────────────────────
     if (this._state === 'classSelect') {
       renderer.drawClassSelect(ctx, canvas.width, canvas.height, CLASSES, this._classIdx);
+      return;
+    }
+
+    // ── Town screen ───────────────────────────────────────────────────────────
+    if (this._state === 'town') {
+      this._drawTown();
       return;
     }
 
@@ -499,6 +786,7 @@ export class GameScene {
     // HUD (screen space)
     renderer.drawHUD(ctx, player, canvas.width, canvas.height);
     renderer.drawMobileControls(ctx, canvas.width, canvas.height);
+    renderer.drawReturnToTownButton(ctx, canvas.width, canvas.height);
     renderer.drawChangelogButton(ctx, canvas.width, canvas.height, this._changelogOpen);
     if (this._changelogOpen) {
       renderer.drawChangelogOverlay(ctx, canvas.width, canvas.height, CHANGELOG, this._changelogScroll);
