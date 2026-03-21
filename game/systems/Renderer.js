@@ -1376,6 +1376,191 @@ export class Renderer {
       ctx.restore();
     }
   }
+  // ── Boss rendering ─────────────────────────────────────────────────────────
+
+  /** Draw the Ancient One boss in world space. */
+  drawBoss(ctx, boss) {
+    if (boss.dead && boss.deadTimer > 2.2) return;
+
+    const { x, y, w, h, facing, hurtTimer, dead, deadTimer, shieldActive } = boss;
+    const t = Date.now() / 1000;
+
+    const deathProgress = dead ? Math.max(0, 1 - deadTimer / 2.2) : 1;
+    const floatUp       = dead ? (1 - deathProgress) * 52 : 0;
+    const hurtFlash     = hurtTimer > 0 && Math.floor(t * 18) % 2 === 0;
+    const spawnScale    = boss._state === 'spawn' ? Math.min(1, boss._stateTimer / 0.7) : 1;
+    const windupFlash   = (boss._state === 'charge' && boss._chargePhase === 'windup') &&
+                          Math.floor(t * 12) % 2 === 0;
+
+    ctx.save();
+    ctx.globalAlpha = deathProgress;
+    ctx.translate(x + w / 2, y + h - floatUp);
+    ctx.scale(facing * spawnScale * deathProgress, spawnScale * deathProgress);
+    ctx.translate(-w / 2, -h);
+
+    _drawBossSprite(ctx, w, h, boss._phase, shieldActive, hurtFlash || windupFlash, t);
+
+    ctx.restore();
+  }
+
+  /** Shockwave ring expanding from boss's feet after a slam. */
+  drawBossShockwave(ctx, boss) {
+    if (!boss.shockwaveActive) return;
+    const progress = Math.max(0, 1 - boss.shockwaveTimer / 0.85);
+    const cx       = boss.x + boss.w / 2;
+    const groundY  = boss.y + boss.h + 2;
+    const radius   = 60 + progress * 320;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, (1 - progress) * 0.85);
+    ctx.strokeStyle = '#ff8800';
+    ctx.lineWidth   = Math.max(1, 7 * (1 - progress));
+    ctx.shadowColor = '#ff4400';
+    ctx.shadowBlur  = 24;
+    ctx.beginPath();
+    ctx.ellipse(cx, groundY, radius, radius * 0.22, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  /** Boulder projectiles fired by the volley move. */
+  drawBossProjectiles(ctx, bossProjectiles) {
+    if (!bossProjectiles.length) return;
+    const t = Date.now() / 1000;
+    for (const bp of bossProjectiles) {
+      const cx = bp.x + 12;
+      const cy = bp.y + 12;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(t * 4.0);
+      ctx.shadowColor = '#cc5500';
+      ctx.shadowBlur  = 12;
+      // Boulder body
+      ctx.fillStyle = '#4a3828';
+      ctx.beginPath();
+      ctx.roundRect(-12, -12, 24, 24, 5);
+      ctx.fill();
+      // Highlight facets
+      ctx.fillStyle = '#6a5840';
+      ctx.fillRect(-9, -10, 7, 4);
+      ctx.fillRect( 4,  -6, 5, 3);
+      ctx.fillStyle = '#2a2018';
+      ctx.fillRect(-10,  6, 7, 4);
+      ctx.fillRect(  3,  7, 5, 4);
+      // Lava crack
+      ctx.strokeStyle = '#ff5500';
+      ctx.lineWidth   = 1.5;
+      ctx.shadowColor = '#ff5500';
+      ctx.shadowBlur  = 8;
+      ctx.beginPath();
+      ctx.moveTo(-8, 2); ctx.lineTo(-4, -4);
+      ctx.lineTo( 2, 0); ctx.lineTo( 8, -5);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  }
+
+  /** Large boss HP bar centered at the top of the screen. */
+  drawBossHPBar(ctx, boss, canvasW, canvasH) {
+    if (boss.dead) return;
+    const barW  = Math.min(520, canvasW * 0.64);
+    const barH  = 20;
+    const barX  = (canvasW - barW) / 2;
+    const barY  = 14;
+    const hpPct = Math.max(0, boss.hp / boss.maxHp);
+    const phase = boss.phase;
+
+    ctx.save();
+
+    // Track background
+    ctx.fillStyle = '#0a0004';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur  = 8;
+    ctx.beginPath();
+    ctx.roundRect(barX - 3, barY - 3, barW + 6, barH + 6, 6);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // HP fill (colour shifts by phase)
+    const fillC = phase === 3 ? '#e05000' : phase === 2 ? '#9030c8' : '#cc0020';
+    ctx.fillStyle   = fillC;
+    ctx.shadowColor = fillC;
+    ctx.shadowBlur  = 8;
+    if (hpPct > 0) {
+      ctx.beginPath();
+      ctx.roundRect(barX, barY, barW * hpPct, barH, [4, hpPct > 0.98 ? 4 : 0, hpPct > 0.98 ? 4 : 0, 4]);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // Phase-transition markers at 66 % and 33 %
+    ctx.strokeStyle = '#ffffff44';
+    ctx.lineWidth   = 2;
+    for (const frac of [0.667, 0.333]) {
+      const mx = barX + barW * frac;
+      ctx.beginPath();
+      ctx.moveTo(mx, barY - 1);
+      ctx.lineTo(mx, barY + barH + 1);
+      ctx.stroke();
+    }
+
+    // Border
+    ctx.strokeStyle = '#ffffff33';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 4);
+    ctx.stroke();
+
+    // Boss name
+    ctx.fillStyle    = '#e8d8c0';
+    ctx.font         = 'bold 13px monospace';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor  = '#000';
+    ctx.shadowBlur   = 6;
+    ctx.fillText('☠  THE ANCIENT ONE', canvasW / 2, barY + barH + 14);
+    ctx.shadowBlur   = 0;
+
+    // Shield warning (pulsing)
+    if (boss.shieldActive) {
+      const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 400);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle   = '#88aaff';
+      ctx.font        = '11px monospace';
+      ctx.fillText(`⬡  POWER SHIELD ACTIVE — reach level ${7} to break it  ⬡`, canvasW / 2, barY + barH + 30);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
+
+  /** Phase-transition or enrage message displayed at screen centre. */
+  drawBossPhaseMessage(ctx, msg, canvasW, canvasH) {
+    if (!msg) return;
+    const frac  = msg.timer / 4.0;
+    const alpha = Math.min(1, frac * 4, (1 - frac) * 4); // fade in/out
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha  = alpha;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    const y = canvasH * 0.36;
+    ctx.font        = 'bold 24px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth   = 5;
+    ctx.shadowColor = msg.color;
+    ctx.shadowBlur  = 24;
+    ctx.strokeText(msg.text, canvasW / 2, y);
+    ctx.fillStyle = msg.color;
+    ctx.fillText(msg.text, canvasW / 2, y);
+    ctx.shadowBlur   = 0;
+    ctx.globalAlpha  = 1;
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1744,192 +1929,6 @@ function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa', cl
     }
     // Thief and Bowman: no sprite arc — projectile is the visual
 
-    ctx.restore();
-  }
-
-  // ── Boss rendering ─────────────────────────────────────────────────────────
-
-  /** Draw the Ancient One boss in world space. */
-  drawBoss(ctx, boss) {
-    if (boss.dead && boss.deadTimer > 2.2) return;
-
-    const { x, y, w, h, facing, hurtTimer, dead, deadTimer, shieldActive } = boss;
-    const t = Date.now() / 1000;
-
-    const deathProgress = dead ? Math.max(0, 1 - deadTimer / 2.2) : 1;
-    const floatUp       = dead ? (1 - deathProgress) * 52 : 0;
-    const hurtFlash     = hurtTimer > 0 && Math.floor(t * 18) % 2 === 0;
-    const spawnScale    = boss._state === 'spawn' ? Math.min(1, boss._stateTimer / 0.7) : 1;
-    const windupFlash   = (boss._state === 'charge' && boss._chargePhase === 'windup') &&
-                          Math.floor(t * 12) % 2 === 0;
-
-    ctx.save();
-    ctx.globalAlpha = deathProgress;
-    ctx.translate(x + w / 2, y + h - floatUp);
-    ctx.scale(facing * spawnScale * deathProgress, spawnScale * deathProgress);
-    ctx.translate(-w / 2, -h);
-
-    _drawBossSprite(ctx, w, h, boss._phase, shieldActive, hurtFlash || windupFlash, t);
-
-    ctx.restore();
-  }
-
-  /** Shockwave ring expanding from boss's feet after a slam. */
-  drawBossShockwave(ctx, boss) {
-    if (!boss.shockwaveActive) return;
-    const progress = Math.max(0, 1 - boss.shockwaveTimer / 0.85);
-    const cx       = boss.x + boss.w / 2;
-    const groundY  = boss.y + boss.h + 2;
-    const radius   = 60 + progress * 320;
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, (1 - progress) * 0.85);
-    ctx.strokeStyle = '#ff8800';
-    ctx.lineWidth   = Math.max(1, 7 * (1 - progress));
-    ctx.shadowColor = '#ff4400';
-    ctx.shadowBlur  = 24;
-    ctx.beginPath();
-    ctx.ellipse(cx, groundY, radius, radius * 0.22, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.shadowBlur  = 0;
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  /** Boulder projectiles fired by the volley move. */
-  drawBossProjectiles(ctx, bossProjectiles) {
-    if (!bossProjectiles.length) return;
-    const t = Date.now() / 1000;
-    for (const bp of bossProjectiles) {
-      const cx = bp.x + 12;
-      const cy = bp.y + 12;
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(t * 4.0);
-      ctx.shadowColor = '#cc5500';
-      ctx.shadowBlur  = 12;
-      // Boulder body
-      ctx.fillStyle = '#4a3828';
-      ctx.beginPath();
-      ctx.roundRect(-12, -12, 24, 24, 5);
-      ctx.fill();
-      // Highlight facets
-      ctx.fillStyle = '#6a5840';
-      ctx.fillRect(-9, -10, 7, 4);
-      ctx.fillRect( 4,  -6, 5, 3);
-      ctx.fillStyle = '#2a2018';
-      ctx.fillRect(-10,  6, 7, 4);
-      ctx.fillRect(  3,  7, 5, 4);
-      // Lava crack
-      ctx.strokeStyle = '#ff5500';
-      ctx.lineWidth   = 1.5;
-      ctx.shadowColor = '#ff5500';
-      ctx.shadowBlur  = 8;
-      ctx.beginPath();
-      ctx.moveTo(-8, 2); ctx.lineTo(-4, -4);
-      ctx.lineTo( 2, 0); ctx.lineTo( 8, -5);
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.restore();
-    }
-  }
-
-  /** Large boss HP bar centered at the top of the screen. */
-  drawBossHPBar(ctx, boss, canvasW, canvasH) {
-    if (boss.dead) return;
-    const barW  = Math.min(520, canvasW * 0.64);
-    const barH  = 20;
-    const barX  = (canvasW - barW) / 2;
-    const barY  = 14;
-    const hpPct = Math.max(0, boss.hp / boss.maxHp);
-    const phase = boss.phase;
-
-    ctx.save();
-
-    // Track background
-    ctx.fillStyle = '#0a0004';
-    ctx.shadowColor = '#000';
-    ctx.shadowBlur  = 8;
-    ctx.beginPath();
-    ctx.roundRect(barX - 3, barY - 3, barW + 6, barH + 6, 6);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // HP fill (colour shifts by phase)
-    const fillC = phase === 3 ? '#e05000' : phase === 2 ? '#9030c8' : '#cc0020';
-    ctx.fillStyle   = fillC;
-    ctx.shadowColor = fillC;
-    ctx.shadowBlur  = 8;
-    if (hpPct > 0) {
-      ctx.beginPath();
-      ctx.roundRect(barX, barY, barW * hpPct, barH, [4, hpPct > 0.98 ? 4 : 0, hpPct > 0.98 ? 4 : 0, 4]);
-      ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-
-    // Phase-transition markers at 66 % and 33 %
-    ctx.strokeStyle = '#ffffff44';
-    ctx.lineWidth   = 2;
-    for (const frac of [0.667, 0.333]) {
-      const mx = barX + barW * frac;
-      ctx.beginPath();
-      ctx.moveTo(mx, barY - 1);
-      ctx.lineTo(mx, barY + barH + 1);
-      ctx.stroke();
-    }
-
-    // Border
-    ctx.strokeStyle = '#ffffff33';
-    ctx.lineWidth   = 1;
-    ctx.beginPath();
-    ctx.roundRect(barX, barY, barW, barH, 4);
-    ctx.stroke();
-
-    // Boss name
-    ctx.fillStyle    = '#e8d8c0';
-    ctx.font         = 'bold 13px monospace';
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.shadowColor  = '#000';
-    ctx.shadowBlur   = 6;
-    ctx.fillText('☠  THE ANCIENT ONE', canvasW / 2, barY + barH + 14);
-    ctx.shadowBlur   = 0;
-
-    // Shield warning (pulsing)
-    if (boss.shieldActive) {
-      const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 400);
-      ctx.globalAlpha = pulse;
-      ctx.fillStyle   = '#88aaff';
-      ctx.font        = '11px monospace';
-      ctx.fillText(`⬡  POWER SHIELD ACTIVE — reach level ${7} to break it  ⬡`, canvasW / 2, barY + barH + 30);
-      ctx.globalAlpha = 1;
-    }
-
-    ctx.textBaseline = 'alphabetic';
-    ctx.restore();
-  }
-
-  /** Phase-transition or enrage message displayed at screen centre. */
-  drawBossPhaseMessage(ctx, msg, canvasW, canvasH) {
-    if (!msg) return;
-    const frac  = msg.timer / 4.0;
-    const alpha = Math.min(1, frac * 4, (1 - frac) * 4); // fade in/out
-    if (alpha <= 0) return;
-    ctx.save();
-    ctx.globalAlpha  = alpha;
-    ctx.textAlign    = 'center';
-    ctx.textBaseline = 'middle';
-    const y = canvasH * 0.36;
-    ctx.font        = 'bold 24px monospace';
-    ctx.strokeStyle = '#000';
-    ctx.lineWidth   = 5;
-    ctx.shadowColor = msg.color;
-    ctx.shadowBlur  = 24;
-    ctx.strokeText(msg.text, canvasW / 2, y);
-    ctx.fillStyle = msg.color;
-    ctx.fillText(msg.text, canvasW / 2, y);
-    ctx.shadowBlur   = 0;
-    ctx.globalAlpha  = 1;
-    ctx.textBaseline = 'alphabetic';
     ctx.restore();
   }
 }
