@@ -41,7 +41,7 @@ export class Combat {
     if (!atk) return;
 
     for (const enemy of enemies) {
-      if (enemy.dead) continue;
+      if (enemy.dead || enemy.hurtTimer > 0) continue;
       if (overlaps(atk, enemy)) {
         enemy.takeDamage(player.attackDamage);
         this.floatingTexts.push(

@@ -32,6 +32,7 @@ export class GameScene {
     this.input    = input;
     this.combat   = new Combat();
     this.renderer = new Renderer();
+    this.audio    = new Audio();
 
     // Both tilemaps pre-built; this.tilemap always points to the active one
     this._currentLevelData = LEVEL1;       // replaced each Tower entry
@@ -68,7 +69,8 @@ export class GameScene {
     this._bossProjectiles = [];     // { x, y, vx, vy, damage, life }  boulder shots
     this._bossMode        = false;  // true while in the boss arena
     this._bossMeleeCd     = 0;      // cooldown to avoid stacking boss melee hits
-    this._bossHitThisSwing = false; // prevent warrior swing from hitting boss every frame
+    this._bossHitThisSwing   = false; // prevent warrior swing from hitting boss every frame
+    this._bossDieSoundPlayed = false;
 
     // Respawn timer
     this._deadTimer = 0;
