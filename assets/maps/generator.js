@@ -4,16 +4,22 @@
  * Tile IDs:  0 = empty, 1 = solid ground, 2 = one-way platform
  * Map size:  28 cols × 44 rows  (TILE = 48 px)
  *
- * Jump physics: JUMP_FORCE = -620 px/s, GRAVITY = 1800 px/s²
- *   max rise ≈ 107 px ≈ 2.22 tiles
- *   All vertical gaps = 2 rows (96 px) — guaranteed reachable.
+ * Jump physics: WALK_SPEED = 220 px/s, JUMP_FORCE = -620 px/s, GRAVITY = 1800 px/s²
+ *   Ascending 2 rows (96 px) takes ≈ 0.235 s → horizontal reach ≈ 52 px ≈ 1 tile.
+ *   This is very tight, so step platforms must overlap with the platform below/above,
+ *   not just be "nearby".
  *
- * Floor rows (platforms, ascending order — row 35 = near bottom, row 7 = top):
+ * Connectivity guarantee:
+ *   Each floor has ONE "primary" platform (the main path) plus an optional
+ *   "bonus" platform on the opposite side for variety.  Each step is placed
+ *   WITHIN the reachable range of the previous primary platform, and the next
+ *   primary platform is centred around that step.  This creates an unbroken
+ *   chain from ground to the exit portal.
+ *
+ * Floor rows (ascending — row 35 is near bottom, row 7 is top):
  *   [35, 31, 27, 23, 19, 15, 11, 7]
- * Step rows (bridge between each pair of adjacent floors):
+ * Step rows (one per floor gap):
  *   [37, 33, 29, 25, 21, 17, 13, 9]
- *   step[i] sits 2 rows above floor[i-1] (or ground) and 2 rows below floor[i],
- *   so it is always reachable from both sides.
  */
 
 const COLS       = 28;
@@ -21,27 +27,16 @@ const ROWS       = 44;
 const TILE       = 48;
 const GROUND_ROW = 39;
 
-// 8 platform tiers, ascending height in the world (lower row number = higher up)
 const FLOOR_ROWS = [35, 31, 27, 23, 19, 15, 11, 7];
-
-// One step row between each pair: step[i] bridges ground/floor[i-1] → floor[i]
 const STEP_ROWS  = [37, 33, 29, 25, 21, 17, 13, 9];
 
-// How many pixels a decoration type extends above the platform surface
 const DECO_RISE = {
-  flowers:   20,
-  toadstool: 20,
-  barrel:    30,
-  stump:     22,
-  crate:     28,
-  haybale:   28,
-  fence:     24,
-  signpost:  56,
+  flowers: 20, toadstool: 20, barrel: 30,
+  stump: 22,   crate: 28,     haybale: 28, fence: 24, signpost: 56,
 };
 
 // ── PRNG ─────────────────────────────────────────────────────────────────────
 
-/** mulberry32 — fast, seedable 32-bit PRNG. */
 function mulberry32(seed) {
   let s = seed >>> 0;
   return function () {
@@ -52,73 +47,9 @@ function mulberry32(seed) {
   };
 }
 
-/** Inclusive integer in [min, max]. */
 function ri(rng, min, max) {
+  if (max < min) return min;
   return min + Math.floor(rng() * (max - min + 1));
-}
-
-// ── Floor layout generators ───────────────────────────────────────────────────
-
-/**
- * Returns an array of platform segments for one floor row.
- * Each segment: { start: col, end: col }  (both inclusive).
- *
- * floorIndex 0 = lowest (row 35), 7 = highest (row 7).
- * Higher floors skew toward wide single platforms to give more landing room.
- */
-function genFloor(rng, floorIndex) {
-  const splitChance = floorIndex <= 5 ? 0.65 : 0.30;
-
-  if (rng() < splitChance) {
-    // Two platforms: one on each side
-    const w1     = ri(rng, 4, 8);
-    const w2     = ri(rng, 4, 8);
-    const l1     = ri(rng, 0, 3);
-    const r2End  = COLS - 1 - ri(rng, 0, 3);
-    const r2Strt = r2End - w2 + 1;
-
-    // Confirm they don't overlap (should be fine for COLS = 28 and w ≤ 8)
-    if (l1 + w1 - 1 < r2Strt) {
-      return [
-        { start: l1,     end: l1 + w1 - 1 },
-        { start: r2Strt, end: r2End        },
-      ];
-    }
-  }
-
-  // Wide centre platform (fallback or chosen by chance)
-  const w     = ri(rng, 10, 18);
-  const sMin  = Math.max(0, Math.floor((COLS - w) / 2) - 2);
-  const sMax  = Math.min(COLS - w, Math.floor((COLS - w) / 2) + 2);
-  const start = ri(rng, sMin, sMax);
-  return [{ start, end: Math.min(COLS - 1, start + w - 1) }];
-}
-
-/**
- * Returns one step segment { start, end } that overlaps horizontally with
- * at least one platform in lowerPlatforms AND at least one in upperPlatforms,
- * guaranteeing the player can reach it from below and jump to the upper floor.
- */
-function genStep(rng, lowerPlatforms, upperPlatforms) {
-  const stepW = ri(rng, 3, 6);
-  const valid = [];
-
-  for (let x = 0; x <= COLS - stepW; x++) {
-    const xEnd     = x + stepW - 1;
-    const hasLower = lowerPlatforms.some(p => x <= p.end && xEnd >= p.start);
-    const hasUpper = upperPlatforms.some(p => x <= p.end && xEnd >= p.start);
-    if (hasLower && hasUpper) valid.push(x);
-  }
-
-  if (valid.length === 0) {
-    // Fallback: anchor to the first upper platform
-    const up = upperPlatforms[0];
-    const x  = ri(rng, up.start, Math.max(up.start, up.end - stepW + 1));
-    return { start: x, end: Math.min(COLS - 1, x + stepW - 1) };
-  }
-
-  const x = valid[ri(rng, 0, valid.length - 1)];
-  return { start: x, end: x + stepW - 1 };
 }
 
 // ── Decoration helpers ────────────────────────────────────────────────────────
@@ -131,13 +62,12 @@ function addDecorations(rng, decorations, platforms, surfaceRow, countMin, count
   for (const p of platforms) {
     const count = ri(rng, countMin, countMax);
     for (let k = 0; k < count; k++) {
-      const col  = ri(rng, p.start, p.end - 1);
+      const col  = ri(rng, p.start, Math.max(p.start, p.end - 1));
       const type = types[ri(rng, 0, types.length - 1)];
-      const rise = DECO_RISE[type] ?? 20;
       decorations.push({
         type,
         x:    col * TILE + ri(rng, 0, 28),
-        y:    surfaceY - rise,
+        y:    surfaceY - (DECO_RISE[type] ?? 20),
         seed: seedOffset + k,
       });
     }
@@ -148,86 +78,124 @@ function addDecorations(rng, decorations, platforms, surfaceRow, countMin, count
 
 /**
  * Generate a full Tower level from a numeric seed.
- * Returns a plain object with the same shape as LEVEL1:
- *   { cols, rows, tiles, enemySpawns, playerStart, portal, decorations }
+ * Returns an object with the same shape as LEVEL1.
  */
 export function generateLevel(seed) {
   const rng = mulberry32(seed);
 
-  // ── Floor platforms ────────────────────────────────────────────────────────
-  const floors = FLOOR_ROWS.map((_, i) => genFloor(rng, i));
+  // reachable = the x-range the player can stand on right now.
+  // Starts as the full ground width.
+  let reachable = { start: 0, end: COLS - 1 };
 
-  // ── Step platforms ────────────────────────────────────────────────────────
-  const FULL_GROUND = [{ start: 0, end: COLS - 1 }];
-  const steps = STEP_ROWS.map((_, i) => {
-    const lower = i === 0 ? FULL_GROUND : floors[i - 1];
-    return genStep(rng, lower, floors[i]);
-  });
+  const primaryPlatforms = [];   // one per floor — guaranteed on the main path
+  const allFloorPlatforms = [];  // primary + optional bonus
+  const steps = [];
+
+  for (let i = 0; i < FLOOR_ROWS.length; i++) {
+    // ── Step[i] ─────────────────────────────────────────────────────────────
+    // Width 4-6 tiles (min 4 so it's easy to land on).
+    // Start and end must fall INSIDE the reachable range so the player can
+    // jump straight up from below to reach it.
+    const stepW     = ri(rng, 4, 6);
+    const stepLoMin = reachable.start;
+    const stepLoMax = Math.max(stepLoMin, reachable.end - stepW + 1);
+    const stepStart = ri(rng, stepLoMin, stepLoMax);
+    const step      = { start: stepStart, end: stepStart + stepW - 1 };
+    steps.push(step);
+
+    // ── Primary platform for floor[i] ────────────────────────────────────────
+    // Centred over the step so the player can jump from step straight up.
+    // Width: stepW+3 to min(stepW+9, COLS/2) — always wider than the step.
+    const primW   = ri(rng, stepW + 3, Math.min(stepW + 9, 14));
+    const stepCx  = Math.floor((step.start + step.end) / 2);
+    const pOffset = ri(rng, -2, 2);
+    const primStart = Math.max(0, Math.min(COLS - primW, stepCx - Math.floor(primW / 2) + pOffset));
+    const primary   = { start: primStart, end: primStart + primW - 1 };
+    primaryPlatforms.push(primary);
+
+    // ── Bonus platform (optional) ─────────────────────────────────────────────
+    // Placed on the side opposite the primary.  Not required for completion —
+    // it's extra challenge/exploration.  Always separated from primary by ≥ 4 cols.
+    const platforms = [primary];
+    if (rng() < 0.55) {
+      const bonusW  = ri(rng, 4, 7);
+      const primCx  = primary.start + Math.floor(primW / 2);
+      let   bonusStart;
+
+      if (primCx <= COLS / 2) {
+        // Primary left → bonus right
+        const lo = Math.min(COLS - bonusW, primary.end + 4);
+        const hi = COLS - bonusW;
+        if (hi >= lo) bonusStart = ri(rng, lo, hi);
+      } else {
+        // Primary right → bonus left
+        const hi = Math.max(0, primary.start - bonusW - 3);
+        if (hi >= 0) bonusStart = ri(rng, 0, hi);
+      }
+
+      if (bonusStart !== undefined && bonusStart >= 0 && bonusStart + bonusW - 1 < COLS) {
+        platforms.push({ start: bonusStart, end: bonusStart + bonusW - 1 });
+      }
+    }
+    allFloorPlatforms.push(platforms);
+
+    // After landing on primary, the player's reachable range = primary platform.
+    reachable = primary;
+  }
 
   // ── Tile array ────────────────────────────────────────────────────────────
   const tiles = new Array(COLS * ROWS).fill(0);
 
-  // Solid ground rows 39–43
-  for (let row = GROUND_ROW; row < ROWS; row++) {
+  for (let row = GROUND_ROW; row < ROWS; row++)
     for (let col = 0; col < COLS; col++) tiles[row * COLS + col] = 1;
-  }
 
-  // One-way floor platforms
   FLOOR_ROWS.forEach((row, i) => {
-    for (const p of floors[i]) {
+    for (const p of allFloorPlatforms[i])
       for (let col = p.start; col <= p.end; col++) tiles[row * COLS + col] = 2;
-    }
   });
 
-  // One-way step platforms
   STEP_ROWS.forEach((row, i) => {
     const s = steps[i];
     for (let col = s.start; col <= s.end; col++) tiles[row * COLS + col] = 2;
   });
 
   // ── Enemy spawns ──────────────────────────────────────────────────────────
-  // Enemy type escalates as floor index increases
-  const ENEMY_BY_FLOOR = ['slime', 'slime', 'slime', 'mushroom', 'mushroom', 'mushroom', 'mushroom', 'mushroom'];
+  // Enemies only on primary platforms — bonus platforms stay empty so the
+  // player isn't punished for accidentally landing on one.
+  const ENEMY_TYPE = ['slime', 'slime', 'slime', 'mushroom', 'mushroom', 'mushroom', 'mushroom', 'mushroom'];
   const enemySpawns = [];
 
   // Ground: 2 slimes
-  enemySpawns.push({ type: 'slime', col: ri(rng,  3, 12), row: GROUND_ROW });
+  enemySpawns.push({ type: 'slime', col: ri(rng, 3, 12), row: GROUND_ROW });
   enemySpawns.push({ type: 'slime', col: ri(rng, 14, 24), row: GROUND_ROW });
 
   FLOOR_ROWS.forEach((row, i) => {
-    const type = ENEMY_BY_FLOOR[i] ?? 'mushroom';
-    for (const p of floors[i]) {
-      const w = p.end - p.start + 1;
-      if (w < 4) continue;
-      // One enemy per platform; two if the platform is wide
-      enemySpawns.push({ type, col: ri(rng, p.start + 1, p.end - 1), row });
-      if (w >= 8) {
-        enemySpawns.push({ type, col: ri(rng, p.start + 2, p.end - 2), row });
-      }
+    const type = ENEMY_TYPE[i] ?? 'mushroom';
+    const p    = primaryPlatforms[i];
+    const w    = p.end - p.start + 1;
+    if (w < 4) return;
+    enemySpawns.push({ type, col: ri(rng, p.start + 1, p.end - 1), row });
+    if (w >= 10) {
+      enemySpawns.push({ type, col: ri(rng, p.start + 2, p.end - 2), row });
     }
   });
 
   // ── Portal ────────────────────────────────────────────────────────────────
-  // Centered above the widest top-floor platform (row 7, 3 rows up = row 4)
-  const topFloor = floors[floors.length - 1];
-  const widest   = topFloor.reduce((a, b) => (b.end - b.start > a.end - a.start ? b : a));
-  const pcx      = Math.floor((widest.start + widest.end) / 2);
-  const portal   = {
-    x: Math.max(0, (pcx - 1)) * TILE,
-    y: 4 * TILE,     // row 4 = 3 rows above top floor (row 7)
+  const topPrimary = primaryPlatforms[primaryPlatforms.length - 1];
+  const portalCx   = Math.floor((topPrimary.start + topPrimary.end) / 2);
+  const portal = {
+    x: Math.max(0, portalCx - 1) * TILE,
+    y: 4 * TILE,
     w: 3 * TILE,
     h: 3 * TILE,
   };
 
   // ── Decorations ───────────────────────────────────────────────────────────
   const decorations = [];
-
-  // Ground decorations
+  const FULL_GROUND = [{ start: 0, end: COLS - 1 }];
   addDecorations(rng, decorations, FULL_GROUND, GROUND_ROW, 4, 7, GROUND_DECO_TYPES, 0);
-
-  // Platform decorations
   FLOOR_ROWS.forEach((row, fi) => {
-    addDecorations(rng, decorations, floors[fi], row, 1, 2, PLATFORM_DECO_TYPES, (fi + 1) * 20);
+    addDecorations(rng, decorations, [primaryPlatforms[fi]], row, 1, 2, PLATFORM_DECO_TYPES, (fi + 1) * 20);
   });
 
   return {
