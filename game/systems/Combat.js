@@ -32,6 +32,7 @@ export class FloatingText {
 export class Combat {
   constructor() {
     this.floatingTexts = [];
+    this.pendingSounds = []; // drained by GameScene each frame
   }
 
   /** Check player attack vs enemies */
@@ -52,6 +53,7 @@ export class Combat {
           )
         );
         if (enemy.dead) {
+          this.pendingSounds.push('enemyDie');
           player.gainExp(enemy.exp);
           this.floatingTexts.push(
             new FloatingText(
@@ -61,6 +63,8 @@ export class Combat {
               '#4ef'
             )
           );
+        } else {
+          this.pendingSounds.push('hitEnemy');
         }
       }
     }
@@ -99,6 +103,7 @@ export class Combat {
           new FloatingText(enemy.x + enemy.w / 2, enemy.y - 10, `-${proj.damage}`, '#ff4')
         );
         if (enemy.dead) {
+          this.pendingSounds.push('enemyDie');
           player.gainExp(enemy.exp);
           this.floatingTexts.push(
             new FloatingText(enemy.x + enemy.w / 2, enemy.y - 32, `+${enemy.exp} EXP`, '#4ef')
@@ -119,6 +124,7 @@ export class Combat {
       new FloatingText(enemy.x + enemy.w / 2, enemy.y - 10, `-${bolt.damage}`, '#a5f3fc')
     );
     if (enemy.dead) {
+      this.pendingSounds.push('enemyDie');
       player.gainExp(enemy.exp);
       this.floatingTexts.push(
         new FloatingText(enemy.x + enemy.w / 2, enemy.y - 32, `+${enemy.exp} EXP`, '#4ef')

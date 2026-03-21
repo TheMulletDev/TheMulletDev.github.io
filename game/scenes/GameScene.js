@@ -15,6 +15,7 @@ import { WORLDS }     from '../../assets/worlds.js';
 import { CHANGELOG }  from '../../assets/changelog.js';
 import { CLASSES }    from '../assets/classes.js';
 import { Boss, BOSS_SHIELD_LEVEL } from '../entities/Boss.js';
+import { Audio } from '../systems/Audio.js';
 
 // Items available in the Mulletville shop
 const SHOP_ITEMS = [
@@ -403,6 +404,16 @@ export class GameScene {
 
   // ── Boss fight helpers ────────────────────────────────────────────────────
 
+  /** Play hurt or die sound on boss after a takeDamage() call. */
+  _playBossHitSound(boss) {
+    if (boss.dead && !this._bossDieSoundPlayed) {
+      this._bossDieSoundPlayed = true;
+      this.audio.bossDie();
+    } else if (!boss.dead) {
+      this.audio.bossHurt();
+    }
+  }
+
   /** Floating damage number above the boss (colour-coded for shield state). */
   _spawnBossDmgText(boss, dmg, shielded) {
     const color = shielded ? '#888888' : '#ff4';
@@ -421,7 +432,9 @@ export class GameScene {
 
     // ── Update boss AI ───────────────────────────────────────────────────────
     boss.shieldActive = player.level < BOSS_SHIELD_LEVEL;
+    const _prevPhaseMsg = boss.phaseMessage;
     boss.update(dt, player);
+    if (!_prevPhaseMsg && boss.phaseMessage) this.audio.bossPhase();
 
     if (!boss.dead) {
       // Physics (same pipeline as enemies)
@@ -525,6 +538,7 @@ export class GameScene {
           const dmg = boss.shieldActive ? Math.max(1, Math.round(raw * 0.10)) : raw;
           boss.takeDamage(dmg);
           this._spawnBossDmgText(boss, dmg, boss.shieldActive);
+          this._playBossHitSound(boss);
         }
       }
 
@@ -537,6 +551,7 @@ export class GameScene {
           const dmg = boss.shieldActive ? Math.max(1, Math.round(raw * 0.10)) : raw;
           boss.takeDamage(dmg);
           this._spawnBossDmgText(boss, dmg, boss.shieldActive);
+          this._playBossHitSound(boss);
         }
       }
     }
@@ -601,6 +616,7 @@ export class GameScene {
         const dmg = nearest.shieldActive ? Math.max(1, Math.round(raw * 0.10)) : raw;
         nearest.takeDamage(dmg);
         this._spawnBossDmgText(nearest, dmg, nearest.shieldActive);
+        this._playBossHitSound(nearest);
       }
     } else if (nearest) {
       this.combat.resolveLightning(bolt, player);
@@ -663,8 +679,9 @@ export class GameScene {
     this.lightningEffects = [];
     this.enemies          = [];
     this._bossProjectiles = [];
-    this._bossMeleeCd      = 0;
-    this._bossHitThisSwing = false;
+    this._bossMeleeCd        = 0;
+    this._bossHitThisSwing   = false;
+    this._bossDieSoundPlayed = false;
 
     // Spawn boss at centre-arena ground level
     this._boss = new Boss(12 * TILE, 8 * TILE);
@@ -727,10 +744,25 @@ export class GameScene {
     }
 
     // --- Player ---
+    const _wasOnGround = player.onGround;
     player.update(dt, this.input);
     integrate(player, dt);
     tilemap.resolveEntity(player);
     player.postPhysics();
+    if (!_wasOnGround && player.onGround) this.audio.land();
+
+    // Drain player sound signals
+    for (const s of player.pendingSounds) {
+      if      (s === 'jump')         this.audio.jump();
+      else if (s === 'doubleJump')   this.audio.doubleJump();
+      else if (s === 'playerHurt')   this.audio.playerHurt();
+      else if (s === 'potion')       this.audio.potion();
+      else if (s === 'coinPickup')   this.audio.coinPickup();
+      else if (s === 'potionPickup') this.audio.potionPickup();
+      else if (s === 'itemPickup')   this.audio.itemPickup();
+      else if (s === 'levelUp')      this.audio.levelUp();
+    }
+    player.pendingSounds.length = 0;
 
     // Keep in world bounds
     player.x = Math.max(0, Math.min(player.x, tilemap.width - player.w));
@@ -762,9 +794,17 @@ export class GameScene {
     combat.resolveEnemyAttack(player, enemies);
     combat.update(dt);
 
+    // Drain combat sound signals
+    for (const s of combat.pendingSounds) {
+      if      (s === 'hitEnemy')  this.audio.hitEnemy();
+      else if (s === 'enemyDie')  this.audio.enemyDie();
+    }
+    combat.pendingSounds.length = 0;
+
     // --- Class-specific attack spawning (rising-edge of attack input) ---
     if (player._attackJustStarted) {
       player._attackJustStarted = false;
+      this.audio.swing(cls);
       const ox = player.facing === 1 ? player.x + player.w : player.x;
       if (cls === 'thief') {
         this.projectiles.push(
@@ -840,6 +880,7 @@ export class GameScene {
     if (!player.dead && !this._worldTransition) {
       const portal = this._currentLevelData.portal;
       if (portal && overlaps(player, portal)) {
+        this.audio.portal();
         if (this._bossMode) {
           // Boss arena exit → return to town
           this._bossMode = false;
