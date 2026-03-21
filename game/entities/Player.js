@@ -59,6 +59,9 @@ export class Player extends Entity {
     this._prevJump       = false; // edge-detection: was jump held last frame
     this._prevJumpHeld   = false; // jump-cut: tracks held state across frames
 
+    // Sound events — drained by GameScene each frame
+    this.pendingSounds = [];
+
     // Animation state
     this.state = 'idle'; // idle | walk | jump | fall | attack
   }
@@ -118,10 +121,12 @@ export class Player extends Entity {
       this.vy = JUMP_FORCE;
       this.jumpBufferTimer = 0;
       this.coyoteTimer = 0;
+      this.pendingSounds.push('jump');
     // Double jump — must be in the air, coyote expired, and have an air jump left
     } else if (jumpJustPressed && !this.onGround && this.coyoteTimer <= 0 && this.jumpsLeft > 0) {
       this.vy = JUMP_FORCE_2;
       this.jumpsLeft--;
+      this.pendingSounds.push('doubleJump');
     }
 
     // Potion use
@@ -175,12 +180,14 @@ export class Player extends Entity {
     if (drop.type === 'coin') {
       this.gold += drop.value;
       this.pendingTexts.push({ text: `+${drop.value}g`, color: '#ffd700' });
+      this.pendingSounds.push('coinPickup');
       return true;
     }
     if (drop.type === 'potion') {
       if (this.potions >= this.maxPotions) return false;
       this.potions++;
       this.pendingTexts.push({ text: '+Potion', color: '#f0abfc' });
+      this.pendingSounds.push('potionPickup');
       return true;
     }
     if (drop.type === 'weapon') {
@@ -190,6 +197,7 @@ export class Player extends Entity {
       this.weapon = w;
       this.attackDamage += w.dmgBonus;
       this.pendingTexts.push({ text: w.name + '!', color: w.color });
+      this.pendingSounds.push('itemPickup');
       return true;
     }
     return false;
@@ -202,6 +210,7 @@ export class Player extends Entity {
     this.potions--;
     this._potionCooldown = 0.5;
     if (healed > 0) this.pendingTexts.push({ text: `+${healed} HP`, color: '#4ade80' });
+    this.pendingSounds.push('potion');
   }
 
   takeDamage(amount) {
@@ -209,6 +218,7 @@ export class Player extends Entity {
     this.hp = Math.max(0, this.hp - amount);
     this.invincible = true;
     this.invincibleTimer = INVINCIBLE_DURATION;
+    this.pendingSounds.push('playerHurt');
     if (this.hp <= 0) this.dead = true;
   }
 
@@ -222,6 +232,7 @@ export class Player extends Entity {
       this.hp = this.maxHp;
       this.attackDamage += 5; // weapon bonus is already included in attackDamage
       this.leveledUp = true;  // drained each frame by GameScene → triggers fireworks
+      this.pendingSounds.push('levelUp');
     }
   }
 }
