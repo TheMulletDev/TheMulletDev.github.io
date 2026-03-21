@@ -245,11 +245,37 @@ export class Renderer {
     if (phase !== 'splash') return;
 
     const mid = canvasH / 2;
-    ctx.textAlign = 'center';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Boss intro splash (targetWorld === null)
+    if (!targetWorld) {
+      const pulse = 0.7 + 0.3 * Math.sin(Date.now() / 280);
+      ctx.fillStyle   = '#cc2200';
+      ctx.shadowColor = '#ff4400';
+      ctx.shadowBlur  = 30 * pulse;
+      ctx.font        = 'bold 52px monospace';
+      ctx.fillText('☠  BOSS  ☠', canvasW / 2, mid - 52);
+      ctx.shadowBlur  = 0;
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font      = 'bold 26px monospace';
+      ctx.fillText('The Ancient One', canvasW / 2, mid + 4);
+
+      ctx.fillStyle = '#cc8060';
+      ctx.font      = '14px monospace';
+      ctx.fillText('A god of stone awakens...', canvasW / 2, mid + 36);
+
+      ctx.fillStyle = '#88aaff';
+      ctx.font      = 'bold 12px monospace';
+      ctx.fillText('⬡  Recommended Level: 7  ⬡', canvasW / 2, mid + 70);
+
+      ctx.textBaseline = 'alphabetic';
+      return;
+    }
 
     ctx.fillStyle   = '#c89a30';
     ctx.font        = 'bold 52px monospace';
-    ctx.textBaseline = 'middle';
     ctx.fillText(`WORLD  ${targetWorld.id}`, canvasW / 2, mid - 48);
 
     ctx.fillStyle = '#ffffff';
@@ -1720,6 +1746,192 @@ function _player(ctx, state, frame, attackTimer = 0, weaponColor = '#a78bfa', cl
 
     ctx.restore();
   }
+
+  // ── Boss rendering ─────────────────────────────────────────────────────────
+
+  /** Draw the Ancient One boss in world space. */
+  drawBoss(ctx, boss) {
+    if (boss.dead && boss.deadTimer > 2.2) return;
+
+    const { x, y, w, h, facing, hurtTimer, dead, deadTimer, shieldActive } = boss;
+    const t = Date.now() / 1000;
+
+    const deathProgress = dead ? Math.max(0, 1 - deadTimer / 2.2) : 1;
+    const floatUp       = dead ? (1 - deathProgress) * 52 : 0;
+    const hurtFlash     = hurtTimer > 0 && Math.floor(t * 18) % 2 === 0;
+    const spawnScale    = boss._state === 'spawn' ? Math.min(1, boss._stateTimer / 0.7) : 1;
+    const windupFlash   = (boss._state === 'charge' && boss._chargePhase === 'windup') &&
+                          Math.floor(t * 12) % 2 === 0;
+
+    ctx.save();
+    ctx.globalAlpha = deathProgress;
+    ctx.translate(x + w / 2, y + h - floatUp);
+    ctx.scale(facing * spawnScale * deathProgress, spawnScale * deathProgress);
+    ctx.translate(-w / 2, -h);
+
+    _drawBossSprite(ctx, w, h, boss._phase, shieldActive, hurtFlash || windupFlash, t);
+
+    ctx.restore();
+  }
+
+  /** Shockwave ring expanding from boss's feet after a slam. */
+  drawBossShockwave(ctx, boss) {
+    if (!boss.shockwaveActive) return;
+    const progress = Math.max(0, 1 - boss.shockwaveTimer / 0.85);
+    const cx       = boss.x + boss.w / 2;
+    const groundY  = boss.y + boss.h + 2;
+    const radius   = 60 + progress * 320;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, (1 - progress) * 0.85);
+    ctx.strokeStyle = '#ff8800';
+    ctx.lineWidth   = Math.max(1, 7 * (1 - progress));
+    ctx.shadowColor = '#ff4400';
+    ctx.shadowBlur  = 24;
+    ctx.beginPath();
+    ctx.ellipse(cx, groundY, radius, radius * 0.22, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  /** Boulder projectiles fired by the volley move. */
+  drawBossProjectiles(ctx, bossProjectiles) {
+    if (!bossProjectiles.length) return;
+    const t = Date.now() / 1000;
+    for (const bp of bossProjectiles) {
+      const cx = bp.x + 12;
+      const cy = bp.y + 12;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(t * 4.0);
+      ctx.shadowColor = '#cc5500';
+      ctx.shadowBlur  = 12;
+      // Boulder body
+      ctx.fillStyle = '#4a3828';
+      ctx.beginPath();
+      ctx.roundRect(-12, -12, 24, 24, 5);
+      ctx.fill();
+      // Highlight facets
+      ctx.fillStyle = '#6a5840';
+      ctx.fillRect(-9, -10, 7, 4);
+      ctx.fillRect( 4,  -6, 5, 3);
+      ctx.fillStyle = '#2a2018';
+      ctx.fillRect(-10,  6, 7, 4);
+      ctx.fillRect(  3,  7, 5, 4);
+      // Lava crack
+      ctx.strokeStyle = '#ff5500';
+      ctx.lineWidth   = 1.5;
+      ctx.shadowColor = '#ff5500';
+      ctx.shadowBlur  = 8;
+      ctx.beginPath();
+      ctx.moveTo(-8, 2); ctx.lineTo(-4, -4);
+      ctx.lineTo( 2, 0); ctx.lineTo( 8, -5);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  }
+
+  /** Large boss HP bar centered at the top of the screen. */
+  drawBossHPBar(ctx, boss, canvasW, canvasH) {
+    if (boss.dead) return;
+    const barW  = Math.min(520, canvasW * 0.64);
+    const barH  = 20;
+    const barX  = (canvasW - barW) / 2;
+    const barY  = 14;
+    const hpPct = Math.max(0, boss.hp / boss.maxHp);
+    const phase = boss.phase;
+
+    ctx.save();
+
+    // Track background
+    ctx.fillStyle = '#0a0004';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur  = 8;
+    ctx.beginPath();
+    ctx.roundRect(barX - 3, barY - 3, barW + 6, barH + 6, 6);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // HP fill (colour shifts by phase)
+    const fillC = phase === 3 ? '#e05000' : phase === 2 ? '#9030c8' : '#cc0020';
+    ctx.fillStyle   = fillC;
+    ctx.shadowColor = fillC;
+    ctx.shadowBlur  = 8;
+    if (hpPct > 0) {
+      ctx.beginPath();
+      ctx.roundRect(barX, barY, barW * hpPct, barH, [4, hpPct > 0.98 ? 4 : 0, hpPct > 0.98 ? 4 : 0, 4]);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // Phase-transition markers at 66 % and 33 %
+    ctx.strokeStyle = '#ffffff44';
+    ctx.lineWidth   = 2;
+    for (const frac of [0.667, 0.333]) {
+      const mx = barX + barW * frac;
+      ctx.beginPath();
+      ctx.moveTo(mx, barY - 1);
+      ctx.lineTo(mx, barY + barH + 1);
+      ctx.stroke();
+    }
+
+    // Border
+    ctx.strokeStyle = '#ffffff33';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 4);
+    ctx.stroke();
+
+    // Boss name
+    ctx.fillStyle    = '#e8d8c0';
+    ctx.font         = 'bold 13px monospace';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor  = '#000';
+    ctx.shadowBlur   = 6;
+    ctx.fillText('☠  THE ANCIENT ONE', canvasW / 2, barY + barH + 14);
+    ctx.shadowBlur   = 0;
+
+    // Shield warning (pulsing)
+    if (boss.shieldActive) {
+      const pulse = 0.55 + 0.45 * Math.sin(Date.now() / 400);
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle   = '#88aaff';
+      ctx.font        = '11px monospace';
+      ctx.fillText(`⬡  POWER SHIELD ACTIVE — reach level ${7} to break it  ⬡`, canvasW / 2, barY + barH + 30);
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
+
+  /** Phase-transition or enrage message displayed at screen centre. */
+  drawBossPhaseMessage(ctx, msg, canvasW, canvasH) {
+    if (!msg) return;
+    const frac  = msg.timer / 4.0;
+    const alpha = Math.min(1, frac * 4, (1 - frac) * 4); // fade in/out
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha  = alpha;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    const y = canvasH * 0.36;
+    ctx.font        = 'bold 24px monospace';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth   = 5;
+    ctx.shadowColor = msg.color;
+    ctx.shadowBlur  = 24;
+    ctx.strokeText(msg.text, canvasW / 2, y);
+    ctx.fillStyle = msg.color;
+    ctx.fillText(msg.text, canvasW / 2, y);
+    ctx.shadowBlur   = 0;
+    ctx.globalAlpha  = 1;
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -2464,4 +2676,167 @@ function _drawBtn(ctx, x, y, w, h, label, color = '#fff') {
   ctx.textBaseline = 'middle';
   ctx.fillText(label, x + w / 2, y + h / 2);
   ctx.textBaseline = 'alphabetic';
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//   BOSS SPRITE — "The Ancient One"   96 × 90 px  (24 × 22 S-units at S=4)
+//
+//   A stone golem with crown spikes, glowing eyes, two massive fists, and
+//   visual cues for each fight phase:
+//     Phase 1: base blue-grey stone + crystal shield glow (if active)
+//     Phase 2: purple-dark stone + cracks across body
+//     Phase 3: fire-red stone + animated ember overlay
+// ═════════════════════════════════════════════════════════════════════════════
+
+function _drawBossSprite(ctx, w, h, phase, shieldActive, hurtFlash, t) {
+  // px() draws one S×S logical-pixel cell
+  function px(c, r, cw = 1, rh = 1) {
+    ctx.fillRect(c * S, r * S, cw * S, rh * S);
+  }
+
+  // ── Phase colour palette ──────────────────────────────────────────────────
+  const bodyD = phase === 3 ? '#3c0c00' : phase === 2 ? '#1e1a30' : '#1c1c2c';
+  const bodyM = phase === 3 ? '#641800' : phase === 2 ? '#2e2a48' : '#2c2c48';
+  const bodyL = phase === 3 ? '#a03418' : phase === 2 ? '#504c70' : '#484870';
+  const eyeC  = phase === 3 ? '#ffe010' : phase === 2 ? '#ff8820' : '#ff2020';
+
+  // ── Shield glow (behind body, drawn first) ────────────────────────────────
+  if (shieldActive) {
+    const pulse = 0.45 + 0.4 * Math.sin(t * 3.2);
+    ctx.save();
+    ctx.globalAlpha = 0.18 + 0.14 * pulse;
+    ctx.fillStyle   = '#88bbff';
+    ctx.shadowColor = '#88bbff';
+    ctx.shadowBlur  = 30 + 12 * pulse;
+    ctx.fillRect(-10, -10, w + 20, h + 20);
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha  = 0.5 + 0.3 * pulse;
+    ctx.strokeStyle  = '#aaccff';
+    ctx.lineWidth    = 4;
+    ctx.shadowColor  = '#88bbff';
+    ctx.shadowBlur   = 22;
+    ctx.beginPath();
+    ctx.ellipse(w / 2, h / 2, w / 2 + 14, h / 2 + 8, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // ── Crown spikes ──────────────────────────────────────────────────────────
+  ctx.fillStyle = bodyL;
+  px(5, 0); px(9, 0); px(13, 0); px(17, 0);
+  ctx.fillStyle = bodyM;
+  px(4, 1, 3); px(8, 1, 3); px(12, 1, 3); px(16, 1, 3);
+  ctx.fillStyle = bodyD;
+  px(3, 2, 18);
+
+  // ── Head block (rows 2–11, cols 3–20) ────────────────────────────────────
+  ctx.fillStyle = bodyM;
+  px(3, 2, 18, 10);
+  // Highlights (top / left edges)
+  ctx.fillStyle = bodyL;
+  px(3, 2, 18, 1);
+  px(3, 3,  1,  9);
+  // Shading (right / lower edges)
+  ctx.fillStyle = bodyD;
+  px(20, 2, 1, 10);
+  px(3, 11, 18, 1);
+
+  // ── Eyes (glowing) ───────────────────────────────────────────────────────
+  ctx.shadowColor = eyeC;
+  ctx.shadowBlur  = 16;
+  ctx.fillStyle   = eyeC;
+  px(6,  4, 3, 3);   // left eye
+  px(15, 4, 3, 3);   // right eye
+  ctx.shadowBlur = 0;
+  // Glint + pupil
+  ctx.fillStyle = '#ffffff';
+  px(6, 4); px(15, 4);
+  ctx.fillStyle = '#0a0000';
+  px(7, 5);  px(16, 5);
+
+  // ── Nose recess ──────────────────────────────────────────────────────────
+  ctx.fillStyle = bodyD;
+  px(11, 7, 2, 2);
+
+  // ── Grimace ───────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#060000';
+  px(7,  9, 10, 2);    // mouth void
+  ctx.fillStyle = '#ccccdd';
+  px(8,  9); px(10, 9, 2); px(13, 9, 2); px(16, 9); // stone teeth
+
+  // ── Shoulder pads (cols 0–5 and 19–24, rows 7–12) ────────────────────────
+  ctx.fillStyle = bodyD;
+  px(0, 7, 5, 6); px(19, 7, 5, 6);
+  ctx.fillStyle = bodyL;
+  px(0, 7, 5, 1); px(0, 7, 1, 6); // top + left highlights
+
+  // ── Arms (cols 0–4 and 20–24, rows 11–17) ────────────────────────────────
+  ctx.fillStyle = bodyM;
+  px(0, 11, 4, 8); px(20, 11, 4, 8);
+  ctx.fillStyle = bodyL;
+  px(0, 11, 1, 8); // left arm outer highlight
+
+  // ── Fists (cols 0–5 and 19–24, rows 17–21) ───────────────────────────────
+  ctx.fillStyle = bodyL;
+  px(0, 17, 5, 4); px(19, 17, 5, 4);
+  ctx.fillStyle = bodyD;
+  px(4, 17, 1, 4); px(19, 17, 1, 4);
+
+  // ── Torso (rows 11–21, cols 4–19) ────────────────────────────────────────
+  ctx.fillStyle = bodyM;
+  px(4, 11, 16, 11);
+  ctx.fillStyle = bodyL;
+  px(4, 11, 1, 11); px(4, 11, 16, 1);
+  ctx.fillStyle = bodyD;
+  px(19, 11, 1, 11);
+
+  // Belt  / waist accent
+  ctx.fillStyle = '#18102a';
+  px(4, 14, 16, 2);
+  ctx.fillStyle = bodyL;
+  px(5, 14); px(9, 14); px(13, 14); px(18, 14); // belt studs
+
+  // ── Feet (rows 20–22, cols 5–9 and 14–18) ────────────────────────────────
+  ctx.fillStyle = bodyD;
+  px(5,  20, 5, 3); px(14, 20, 5, 3);
+  ctx.fillStyle = bodyL;
+  px(5,  20, 5, 1); px(14, 20, 5, 1); // toe highlights
+
+  // ── Phase 2+: cracks ─────────────────────────────────────────────────────
+  if (phase >= 2) {
+    ctx.fillStyle = '#9090b8';
+    px(6, 2); px(7, 3); px(8, 4); px(9, 5); px(10, 6); // crack 1
+    px(18, 8); px(17, 9); px(16, 10); px(15, 11);       // crack 2
+    px(8, 14); px(9, 15); px(10, 16);                    // lower crack
+  }
+
+  // ── Phase 3: ember / fire overlay ────────────────────────────────────────
+  if (phase === 3) {
+    const flicker = 0.3 + 0.25 * Math.sin(t * 8.0);
+    ctx.save();
+    ctx.globalAlpha = flicker;
+    ctx.fillStyle   = '#ff4400';
+    ctx.shadowColor = '#ff4400';
+    ctx.shadowBlur  = 28;
+    px(3, 2, 18, 20);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+    ctx.restore();
+  }
+
+  // ── Hurt flash (on top of everything) ────────────────────────────────────
+  if (hurtFlash) {
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle   = '#ffffff';
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur  = 22;
+    px(0, 0, 24, 22);
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
 }
