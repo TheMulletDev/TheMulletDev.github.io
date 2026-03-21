@@ -31,9 +31,9 @@ const PHASE3_HP = BOSS_HP * 0.333;
 // Numeric values are cooldown seconds; null means that move is locked this phase.
 const PHASE = [
   null, // index 0 unused
-  { spd: 65,  attack: 3.5, slam: 7.5,  summon: 14.0, volley: null, charge: null  },
-  { spd: 95,  attack: 2.5, slam: 5.5,  summon: 12.0, volley: 4.5,  charge: null  },
-  { spd: 120, attack: 1.8, slam: 6.5,  summon: null,  volley: 3.5,  charge: 7.0  },
+  { spd: 160, attack: 2.0, slam: 4.5,  summon:  9.0, volley: null, charge: null  },
+  { spd: 210, attack: 1.4, slam: 3.2,  summon:  7.0, volley: 2.8,  charge: null  },
+  { spd: 270, attack: 0.9, slam: 4.0,  summon: null,  volley: 2.0,  charge: 4.0  },
 ];
 
 export class Boss extends Entity {
@@ -45,8 +45,8 @@ export class Boss extends Entity {
     this.facing = -1; // starts facing left
 
     // Damage dealt on contact in 'attack' and 'charge' states
-    this.meleeDmg  = 80;
-    this.chargeDmg = 110;
+    this.meleeDmg  = 110;
+    this.chargeDmg = 150;
 
     // Shield state (set each frame by GameScene based on player.level)
     this.shieldActive = true;
@@ -77,7 +77,7 @@ export class Boss extends Entity {
     // Shockwave (ground-level AoE, driven by GameScene)
     this.shockwaveActive = false;
     this.shockwaveTimer  = 0;
-    this.shockwaveDamage = 70;
+    this.shockwaveDamage = 90;
 
     // Visual hurt flash
     this.hurtTimer = 0;
@@ -239,22 +239,19 @@ export class Boss extends Entity {
 
   _patrol(dt, player) {
     const def = PHASE[this._phase];
-    this.vx = this._patrolDir * def.spd * 0.35;
 
-    // Bounce off arena side-walls (keep 80 px buffer from col 0 / col 27 walls)
-    const leftBound  = 80;
-    const rightBound = 27 * 48 - 80 - this.w;
-    if (this.x <= leftBound)   this._patrolDir =  1;
-    if (this.x >= rightBound)  this._patrolDir = -1;
+    // Actively chase the player instead of bouncing off walls
+    const pdx = (player.x + player.w / 2) - (this.x + this.w / 2);
+    this.vx = Math.sign(pdx) * def.spd * 0.55;
 
-    // After patrol delay, choose next action
-    const delay = this._phase === 3 ? 0.7 : this._phase === 2 ? 1.1 : 1.6;
+    // After a short delay, pick next action — no more long idle windows
+    const delay = this._phase === 3 ? 0.4 : this._phase === 2 ? 0.7 : 1.0;
     if (this._stateTimer >= delay) {
       const actions = this._availableActions();
       if (actions.length) {
         this._startAction(this._pickAction(actions, player));
       } else {
-        this._stateTimer = 0; // nothing ready — keep patrolling
+        this._stateTimer = 0; // nothing ready — keep chasing
       }
     }
   }
@@ -280,8 +277,8 @@ export class Boss extends Entity {
     switch (this._slamPhase) {
       case 'windup':
         this.vx = 0;
-        // 0.7 s crouch telegraphs the jump
-        if (this._stateTimer >= 0.7) {
+        // 0.45 s crouch telegraphs the jump
+        if (this._stateTimer >= 0.45) {
           this._slamPhase = 'rise';
           this.vy = -880; // leap!
         }
@@ -328,41 +325,45 @@ export class Boss extends Entity {
 
   _volley(dt, player) {
     this.vx = 0;
-    if (this._stateTimer >= 0.6 && !this._volleyFired) {
+    if (this._stateTimer >= 0.5 && !this._volleyFired) {
       this._volleyFired = true;
       const cx  = this.x + this.w / 2;
       const cy  = this.y + this.h * 0.3;
       const pdx = (player.x + player.w / 2) - cx;
       const pdy = (player.y + player.h / 2) - cy;
       const ang = Math.atan2(pdy, pdx);
-      const spd = 360;
-      // Three boulders: aimed + ±22° spread
-      for (let i = -1; i <= 1; i++) {
-        const a = ang + i * 0.38;
+      const spd = 420;
+      // Phase 3: 7 boulders wide spread; otherwise 5
+      const count  = this._phase === 3 ? 7 : 5;
+      const spread = this._phase === 3 ? 0.38 : 0.30;
+      const half   = Math.floor(count / 2);
+      for (let i = -half; i <= half; i++) {
+        const a = ang + i * spread;
         this.pendingProjectiles.push({
           x: cx - 12, y: cy - 12,
           vx: Math.cos(a) * spd,
           vy: Math.sin(a) * spd,
-          damage: 35,
+          damage: 40,
           life: 3.0,
         });
       }
     }
-    if (this._stateTimer >= 1.5) this._setState('patrol');
+    if (this._stateTimer >= 1.4) this._setState('patrol');
   }
 
   _charge(dt) {
     if (this._chargePhase === 'windup') {
       this.vx = 0;
-      // 0.6 s flash-and-roar telegraph
-      if (this._stateTimer >= 0.6) {
+      // 0.4 s flash-and-roar telegraph
+      if (this._stateTimer >= 0.4) {
         this._chargePhase = 'dash';
         this._chargeTimer = 0;
+        this._chargeDir   = this.facing; // re-lock direction at launch
       }
     } else {
       this._chargeTimer += dt;
-      this.vx = this._chargeDir * 640;
-      if (this._chargeTimer >= 1.0) {
+      this.vx = this._chargeDir * 780;
+      if (this._chargeTimer >= 1.1) {
         this.vx = 0;
         this._setState('patrol');
       }
