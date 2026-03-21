@@ -67,6 +67,7 @@ export class GameScene {
     this._bossProjectiles = [];     // { x, y, vx, vy, damage, life }  boulder shots
     this._bossMode        = false;  // true while in the boss arena
     this._bossMeleeCd     = 0;      // cooldown to avoid stacking boss melee hits
+    this._bossHitThisSwing = false; // prevent warrior swing from hitting boss every frame
 
     // Respawn timer
     this._deadTimer = 0;
@@ -513,10 +514,13 @@ export class GameScene {
     if (!boss.dead) {
       const cls = player.playerClass?.id;
 
-      // Warrior melee
+      // Warrior melee (one hit per swing — reset flag when swing ends)
       if (!cls || cls === 'warrior') {
         const atk = player.getAttackBox();
-        if (atk && overlaps(atk, boss)) {
+        if (!atk) {
+          this._bossHitThisSwing = false; // swing ended, allow next swing to hit
+        } else if (atk && overlaps(atk, boss) && !this._bossHitThisSwing) {
+          this._bossHitThisSwing = true;
           const raw = player.attackDamage;
           const dmg = boss.shieldActive ? Math.max(1, Math.round(raw * 0.10)) : raw;
           boss.takeDamage(dmg);
@@ -659,7 +663,8 @@ export class GameScene {
     this.lightningEffects = [];
     this.enemies          = [];
     this._bossProjectiles = [];
-    this._bossMeleeCd     = 0;
+    this._bossMeleeCd      = 0;
+    this._bossHitThisSwing = false;
 
     // Spawn boss at centre-arena ground level
     this._boss = new Boss(12 * TILE, 8 * TILE);
