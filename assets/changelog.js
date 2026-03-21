@@ -6,6 +6,19 @@
  */
 export const CHANGELOG = [
   {
+    version: '0.7',
+    date: '2026-03-21',
+    changes: [
+      'Mulletville — a home-base town hub between runs',
+      'Select your class, then spawn in town to prepare before entering combat',
+      'Walk into "The Tower" arch portal to enter the combat map',
+      'Shop NPC in the centre of town — press [E] to open the shop',
+      'Shop: buy Health Potions, HP Crystals, Power Scrolls, and weapons',
+      '"↩ TOWN" button in combat HUD returns you to Mulletville with your loot',
+      'Gold earned in combat can now be spent on permanent upgrades',
+    ],
+  },
+  {
     version: '0.6',
     date: '2026-03-20',
     changes: [

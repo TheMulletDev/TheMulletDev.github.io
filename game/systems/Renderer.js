@@ -270,6 +270,367 @@ export class Renderer {
     ctx.textBaseline = 'alphabetic';
   }
 
+  // ── Mulletville town ──────────────────────────────────────────────────────
+
+  /**
+   * Draw a stone arch portal in world space.
+   * portal: { x, y, w, h, color, label, disabled }
+   * The portal bottom (y + h) should sit flush with the ground surface.
+   */
+  drawTownPortal(ctx, portal) {
+    const { x, y, w, h, color, label, disabled } = portal;
+    const cx      = x + w / 2;
+    const archR   = w / 2;          // radius of the semicircle arch top
+    const archCY  = y + archR;      // y-centre of the semicircle
+    const pillarW = 14;
+    const t       = Date.now() / 1000;
+    const pulse   = disabled ? 0.4 : (0.65 + 0.35 * Math.sin(t * 2.2));
+
+    const stoneD = disabled ? '#2e2a38' : '#5a5068';
+    const stoneM = disabled ? '#3a3648' : '#6e6080';
+    const stoneL = disabled ? '#484458' : '#8a7a9a';
+
+    ctx.save();
+
+    // Arch filled semicircle (stone)
+    ctx.fillStyle = stoneM;
+    ctx.beginPath();
+    ctx.arc(cx, archCY, archR, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // Highlight ring on arch face
+    ctx.strokeStyle = stoneL;
+    ctx.lineWidth   = 2;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.arc(cx, archCY, archR - 4, Math.PI, 0);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Keystone at apex
+    ctx.fillStyle = stoneD;
+    ctx.fillRect(cx - 9, y, 18, 14);
+    ctx.fillStyle = stoneL;
+    ctx.fillRect(cx - 7, y + 2, 14, 3);
+
+    // Left pillar
+    ctx.fillStyle = stoneM;
+    ctx.fillRect(x, archCY, pillarW, h - archR);
+    ctx.fillStyle = stoneL;
+    ctx.fillRect(x + 2, archCY, 3, h - archR); // light edge
+    ctx.fillStyle = stoneD;
+    ctx.fillRect(x + pillarW - 3, archCY, 3, h - archR); // shadow edge
+
+    // Right pillar
+    ctx.fillStyle = stoneM;
+    ctx.fillRect(x + w - pillarW, archCY, pillarW, h - archR);
+    ctx.fillStyle = stoneL;
+    ctx.fillRect(x + w - pillarW + 2, archCY, 3, h - archR);
+    ctx.fillStyle = stoneD;
+    ctx.fillRect(x + w - 3, archCY, 3, h - archR);
+
+    // Portal void (interior)
+    const voidX = x + pillarW;
+    const voidW = w - pillarW * 2;
+    const voidY = archCY - archR + pillarW;  // just inside the semicircle
+    const voidH = (y + h) - voidY;
+
+    ctx.fillStyle = disabled ? '#0c0a14' : '#04030e';
+    ctx.fillRect(voidX, voidY, voidW, voidH);
+
+    if (!disabled) {
+      // Gradient glow inside
+      const grad = ctx.createLinearGradient(voidX, voidY, voidX, voidY + voidH);
+      grad.addColorStop(0,   color + 'aa');
+      grad.addColorStop(0.5, color + '44');
+      grad.addColorStop(1,   color + '18');
+      ctx.globalAlpha = pulse * 0.75;
+      ctx.fillStyle   = grad;
+      ctx.fillRect(voidX, voidY, voidW, voidH);
+      ctx.globalAlpha = 1;
+
+      // Orbiting sparkles
+      const vcx = voidX + voidW / 2;
+      const vcy = voidY + voidH * 0.45;
+      ctx.shadowColor = color;
+      for (let i = 0; i < 7; i++) {
+        const a  = (i / 7) * Math.PI * 2 + t * 1.3;
+        const sx = vcx + Math.cos(a) * voidW * 0.28;
+        const sy = vcy + Math.sin(a) * voidH * 0.32;
+        ctx.globalAlpha = pulse * (0.35 + 0.65 * Math.abs(Math.sin(t * 2.4 + i)));
+        ctx.shadowBlur  = 8;
+        ctx.fillStyle   = color;
+        ctx.fillRect(sx - 2, sy - 2, 4, 4);
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur  = 0;
+    }
+
+    // Label above arch
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = 'bold 13px monospace';
+    ctx.fillStyle    = disabled ? '#445' : color;
+    if (!disabled) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur  = 10;
+      ctx.globalAlpha = pulse;
+    }
+    ctx.fillText(label, cx, y - 14);
+    ctx.globalAlpha  = 1;
+    ctx.shadowBlur   = 0;
+    ctx.textBaseline = 'alphabetic';
+
+    ctx.restore();
+  }
+
+  /**
+   * Draw the shop NPC (shopkeeper sprite) in world space.
+   * x, y = top-left of the sprite bounding box.
+   * showPrompt = true when player is nearby → show [E] interact prompt.
+   */
+  drawShopNPC(ctx, x, y, showPrompt) {
+    const S4 = 4;
+    const t  = Date.now() / 1000;
+    const bob = Math.round(Math.sin(t * 1.4) * 1.5);
+
+    ctx.save();
+    ctx.translate(x, y + bob);
+
+    // Hair (brown)
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(2 * S4, 0,      4 * S4, S4);
+    ctx.fillRect(S4,      0,      S4,     2 * S4);
+    ctx.fillRect(7 * S4,  0,      S4,     2 * S4);
+
+    // Head (skin)
+    ctx.fillStyle = '#ffcc80';
+    ctx.fillRect(2 * S4,  S4,     4 * S4, 3 * S4);
+
+    // Eyes
+    ctx.fillStyle = '#111122';
+    ctx.fillRect(3 * S4,  2 * S4, S4,     S4);
+    ctx.fillRect(5 * S4,  2 * S4, S4,     S4);
+
+    // Cheeks
+    ctx.fillStyle = '#ffb74d';
+    ctx.fillRect(2 * S4,  3 * S4, S4,     S4);
+    ctx.fillRect(6 * S4,  3 * S4, S4,     S4);
+
+    // Apron body (white)
+    ctx.fillStyle = '#eeeeee';
+    ctx.fillRect(2 * S4,  4 * S4, 4 * S4, 4 * S4);
+
+    // Arms (skin)
+    ctx.fillStyle = '#ffcc80';
+    ctx.fillRect(S4,      4 * S4, S4,     3 * S4);
+    ctx.fillRect(7 * S4,  4 * S4, S4,     3 * S4);
+
+    // Apron pocket accent
+    ctx.fillStyle = '#bdbdbd';
+    ctx.fillRect(3 * S4,  6 * S4, 2 * S4, 2 * S4);
+
+    // Legs
+    ctx.fillStyle = '#546e7a';
+    ctx.fillRect(2 * S4,  8 * S4, 2 * S4, 2 * S4);
+    ctx.fillRect(5 * S4,  8 * S4, 2 * S4, 2 * S4);
+
+    // Boots
+    ctx.fillStyle = '#4e342e';
+    ctx.fillRect(2 * S4, 10 * S4, 2 * S4, S4);
+    ctx.fillRect(5 * S4, 10 * S4, 2 * S4, S4);
+
+    ctx.restore();
+
+    // "SHOP" sign above NPC (world space — no bob so it stays readable)
+    const ncx = x + 4 * S4;
+    ctx.save();
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = 'bold 11px monospace';
+    ctx.fillStyle    = '#ffd700';
+    ctx.shadowColor  = '#ffd700';
+    ctx.shadowBlur   = 8;
+    ctx.fillText('SHOP', ncx, y - 18);
+    ctx.shadowBlur   = 0;
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+
+    if (showPrompt) {
+      this._drawInteractPrompt(ctx, ncx, y - 34);
+    }
+  }
+
+  /** Floating "[E]" interact prompt in world space. */
+  _drawInteractPrompt(ctx, cx, topY) {
+    const t      = Date.now() / 600;
+    const bounce = Math.sin(t) * 3;
+    ctx.save();
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = 'bold 12px monospace';
+    ctx.fillStyle    = '#ffffff';
+    ctx.shadowColor  = '#aaaaff';
+    ctx.shadowBlur   = 8;
+    ctx.fillText('[E]', cx, topY + bounce);
+    ctx.shadowBlur   = 0;
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
+
+  // ── Shop overlay (screen space) ───────────────────────────────────────────
+
+  shopPanelRect(canvasW, canvasH) {
+    const w = Math.min(380, canvasW - 32);
+    const h = Math.min(canvasH - 60, 400);
+    return { x: (canvasW - w) / 2, y: (canvasH - h) / 2, w, h };
+  }
+
+  shopItemRects(canvasW, canvasH, count) {
+    const p     = this.shopPanelRect(canvasW, canvasH);
+    const pad   = 12;
+    const itemH = 52;
+    const startY = p.y + 52;
+    return Array.from({ length: count }, (_, i) => ({
+      x: p.x + pad,
+      y: startY + i * (itemH + 6),
+      w: p.w - pad * 2,
+      h: itemH,
+    }));
+  }
+
+  drawShopOverlay(ctx, canvasW, canvasH, items, selectedIdx, playerGold) {
+    const p = this.shopPanelRect(canvasW, canvasH);
+
+    // Backdrop
+    ctx.fillStyle = 'rgba(0,0,0,0.72)';
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    // Panel
+    ctx.fillStyle   = '#100e22';
+    ctx.strokeStyle = '#c89a30';
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.roundRect(p.x, p.y, p.w, p.h, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    // Title
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = 'bold 15px monospace';
+    ctx.fillStyle    = '#c89a30';
+    ctx.shadowColor  = '#c89a30';
+    ctx.shadowBlur   = 8;
+    ctx.fillText('MULLETVILLE  SHOP', p.x + p.w / 2, p.y + 26);
+    ctx.shadowBlur   = 0;
+
+    // Gold display
+    ctx.font      = '12px monospace';
+    ctx.fillStyle = '#ffd700';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${playerGold}g`, p.x + p.w - 44, p.y + 26);
+
+    // Close [X]
+    ctx.font         = 'bold 14px monospace';
+    ctx.fillStyle    = '#888';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✕', p.x + p.w - 18, p.y + 18);
+
+    // Divider
+    ctx.strokeStyle = '#332a50';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(p.x + 12, p.y + 42);
+    ctx.lineTo(p.x + p.w - 12, p.y + 42);
+    ctx.stroke();
+
+    // Items
+    const rects = this.shopItemRects(canvasW, canvasH, items.length);
+    for (let i = 0; i < items.length; i++) {
+      const item    = items[i];
+      const r       = rects[i];
+      const sel     = i === selectedIdx;
+      const afford  = playerGold >= item.cost;
+
+      // Row background
+      ctx.fillStyle   = sel ? (afford ? '#201d3e' : '#1a1828') : '#160f28';
+      ctx.strokeStyle = sel ? (afford ? '#c89a30' : '#444')    : '#2a2440';
+      ctx.lineWidth   = sel ? 2 : 1;
+      ctx.beginPath();
+      ctx.roundRect(r.x, r.y, r.w, r.h, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // Icon square
+      ctx.fillStyle   = afford ? item.icon : '#444';
+      ctx.shadowColor = (sel && afford) ? item.icon : 'transparent';
+      ctx.shadowBlur  = (sel && afford) ? 10 : 0;
+      ctx.fillRect(r.x + 10, r.y + r.h / 2 - 9, 18, 18);
+      ctx.shadowBlur  = 0;
+
+      // Name
+      ctx.textAlign    = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font         = `bold 12px monospace`;
+      ctx.fillStyle    = afford ? '#ffffff' : '#555';
+      ctx.fillText(item.name, r.x + 38, r.y + 18);
+
+      // Description
+      ctx.font      = '10px monospace';
+      ctx.fillStyle = afford ? '#998' : '#443';
+      ctx.fillText(item.desc, r.x + 38, r.y + 34);
+
+      // Cost
+      ctx.textAlign = 'right';
+      ctx.font      = 'bold 12px monospace';
+      ctx.fillStyle = afford ? '#ffd700' : '#664';
+      ctx.fillText(`${item.cost}g`, r.x + r.w - 10, r.y + r.h / 2);
+    }
+
+    // Footer hint
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font         = '10px monospace';
+    ctx.fillStyle    = '#444';
+    ctx.fillText('↑↓ navigate  ·  [E] buy  ·  [ESC] close', p.x + p.w / 2, p.y + p.h - 14);
+
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign    = 'left';
+  }
+
+  // ── Return-to-town HUD button (screen space, shown during combat) ──────────
+
+  returnToTownBtnRect(canvasW, canvasH) {
+    const w = 92, h = 26, pad = 14;
+    return { x: canvasW - w - pad, y: pad + 36, w, h };
+  }
+
+  drawReturnToTownButton(ctx, canvasW, canvasH) {
+    const { x, y, w, h } = this.returnToTownBtnRect(canvasW, canvasH);
+    ctx.save();
+    ctx.globalAlpha = 0.88;
+    ctx.fillStyle   = '#121e12';
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 6);
+    ctx.fill();
+    ctx.strokeStyle = '#3a7a3a';
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 6);
+    ctx.stroke();
+    ctx.globalAlpha  = 1;
+    ctx.fillStyle    = '#4a9a4a';
+    ctx.font         = 'bold 11px monospace';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('↩ TOWN', x + w / 2, y + h / 2);
+    ctx.textBaseline = 'alphabetic';
+    ctx.restore();
+  }
+
   drawHUD(ctx, player, canvasW, canvasH) {
     const pad = 14;
 
